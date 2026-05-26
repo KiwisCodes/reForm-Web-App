@@ -5,6 +5,8 @@ import com.reForm.backend.core.domain.BaseEntity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -36,5 +38,11 @@ public class User extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false)
     private Role role;
+
+    @ManyToMany(fetch = FetchType.LAZY, cascade = CascadeType.ALL, mappedBy = "users")
+    private Set<Workspace> workspaces = new HashSet<>();
+    //mapped by users, to mark that this is the non-owing side (jointable is in the Workspace class,
+    //also, there must be variable called users in the Workspace class, do not mismatch them
+    //cascade all here is dangerous, once user is deleted, all workspaces belonging to them will be deleted too
 }
 

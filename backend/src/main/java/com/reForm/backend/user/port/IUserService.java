@@ -9,8 +9,7 @@ import java.util.UUID;
 
 public interface IUserService {
     public UserResponseDto registerUser(UserRegisterRequestDto userRegisterRequestDto);
-    public UserResponseDto loginUser(UserLoginRequestDto userLoginRequestDto);
-    public UserResponseDto updateUser(UserUpdateRequestDto userUpdateRequestDto);
+    public UserResponseDto updateUser(UUID uuid, UserUpdateRequestDto userUpdateRequestDto);
 //    public UserResponseDto updatePassword(UserUpdateRequestDto userUpdateRequestDto);
     public UserResponseDto getUserProfile(UUID uuid);
     public void deleteUser(UUID uuid);
