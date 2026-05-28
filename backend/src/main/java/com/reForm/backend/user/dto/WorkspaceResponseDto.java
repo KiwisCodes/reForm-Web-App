@@ -8,8 +8,6 @@ import java.util.UUID;
 public record WorkspaceResponseDto(
         UUID uuid,
         String name,
-        String description,
-        User owner,
-        Set<User> members
+        String description
 ) {
 }
