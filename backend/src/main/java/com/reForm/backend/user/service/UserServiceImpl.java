@@ -1,5 +1,6 @@
 package com.reForm.backend.user.service;
 
+import com.reForm.backend.core.exception.ResourceNotFoundException;
 import com.reForm.backend.user.dto.UserRegisterRequestDto;
 import com.reForm.backend.user.dto.UserResponseDto;
 import com.reForm.backend.user.dto.UserUpdateRequestDto;
@@ -7,6 +8,7 @@ import com.reForm.backend.user.entity.Role;
 import com.reForm.backend.user.entity.User;
 import com.reForm.backend.user.mapper.UserMapper;
 import com.reForm.backend.user.port.IUserService;
+import com.reForm.backend.user.port.IWorkspaceService;
 import com.reForm.backend.user.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -22,7 +24,7 @@ public class UserServiceImpl implements IUserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final UserMapper userMapper;
-    private final WorkspaceService workspaceService;
+    private final IWorkspaceService workspaceService;
 
 
     @Override

@@ -8,9 +8,10 @@ import java.util.Set;
 import java.util.UUID;
 
 public interface IWorkspaceService {
-    public WorkspaceResponseDto createWorkspace(WorkspaceCreateRequestDto workspaceCreateRequestDto);
-    public WorkspaceResponseDto updateWorkspace(WorkspaceUpdateRequestDto workspaceUpdateRequestDto);
-    public WorkspaceResponseDto deleteWorkspace(UUID userId);
-    public WorkspaceResponseDto addMembers(Set<String> emails);
-    public WorkspaceResponseDto removeMembers(Set<String> emails);
+    public WorkspaceResponseDto createWorkspace(UUID ownerId, WorkspaceCreateRequestDto workspaceCreateRequestDto);
+    public WorkspaceResponseDto updateWorkspace(UUID ownerId, WorkspaceUpdateRequestDto workspaceUpdateRequestDto);
+    public void deleteWorkspace(UUID userId);
+    public WorkspaceResponseDto addMembers(UUID ownerId, Set<String> emails);
+    public WorkspaceResponseDto removeMembers(UUID ownerId, Set<String> emails);
+    public WorkspaceResponseDto getWorkspace(UUID userId);
 }

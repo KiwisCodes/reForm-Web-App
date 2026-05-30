@@ -9,7 +9,8 @@ import java.util.UUID;
 public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
     //this is wrong, it must be based on the attributes
     //Workspace extends BaseEntity, which has attribute id, so must be id, not uuid
-    Optional<Workspace> findByUUID(UUID id);
+    Optional<Workspace> findById(UUID id);
 
 
+    Optional<Workspace> findByOwnerId(UUID id);
 }

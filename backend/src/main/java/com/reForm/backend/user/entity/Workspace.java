@@ -21,7 +21,7 @@ public class Workspace extends BaseEntity {
     @Column(nullable = false)
     private String workspaceName;
 
-    @Column(nullable = true)
+    @Column()
     private String workspaceDescription;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -32,7 +32,7 @@ public class Workspace extends BaseEntity {
     @JoinTable(
             name = "workspace_members",
             joinColumns = @JoinColumn(name="workspace_id"),
-            inverseJoinColumns = @JoinColumn(name="user_id")
+            inverseJoinColumns = @JoinColumn(name="member_id")
     )
-    private Set<User> users = new HashSet<>();
+    private Set<User> members = new HashSet<>();
 }
