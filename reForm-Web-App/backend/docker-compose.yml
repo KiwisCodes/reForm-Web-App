@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  db:
+    container_name: reform-postgres
+    image: postgres:15-alpine # Using specific alpine version is recommended for speed and size
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-reform_db}
+      PGDATA: /data/postgres
+    volumes:
+      - db:/data/postgres
+    ports:
+      - "5332:5432" # Maps outer port 5332 to inner Postgres default 5432
+    networks:
+      - reform-internal-network
+    restart: unless-stopped
+
+    # 1. Advanced Health Checking
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+    # 2. Advanced Resource Limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+
+    # 3. Advanced Log Rotation
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    container_name: reform-redis
+    image: redis:7-alpine
+    command: redis-server --save 60 1 --loglevel warning # Persists data every 60s if 1 key changes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - reform-internal-network
+    restart: unless-stopped
+
+    # 1. Redis Health Checking
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+    # 2. Advanced Resource Limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25' # Redis is single-threaded, needs less CPU
+          memory: 256M
+
+    # 3. Advanced Log Rotation
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  reform-internal-network:
+    driver: bridge
+
+volumes:
+  db:
+  redis_data:
