@@ -5,6 +5,7 @@ import jakarta.persistence.Enumerated;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.springframework.cglib.core.Block;
 
 import java.util.UUID;
 
@@ -20,15 +21,14 @@ enum StaticBlockType {
 
 public class StaticBlock extends AbstractBlock{
 
-    @Enumerated(EnumType.STRING)
     private StaticBlockType subType;
 
     private String placeholder;
 
 
     @Override
-    public String getType() {
-        return "STATIC";
+    public BlockType getType() {
+        return BlockType.STATIC;
     }
 
 }

@@ -21,7 +21,7 @@ import java.util.UUID;
 
 public abstract class AbstractBlock implements IFormBlock{
 
-    private UUID id;
+    private UUID id = UUID.randomUUID();;
     private String label;
     private String description;
     private boolean isRequired;
