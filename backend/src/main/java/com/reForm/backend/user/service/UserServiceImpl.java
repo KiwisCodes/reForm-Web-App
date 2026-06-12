@@ -10,10 +10,10 @@ import com.reForm.backend.user.mapper.UserMapper;
 import com.reForm.backend.user.port.IUserService;
 import com.reForm.backend.user.port.IWorkspaceService;
 import com.reForm.backend.user.repository.UserRepository;
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
@@ -31,9 +31,15 @@ public class UserServiceImpl implements IUserService {
     @Transactional
     public UserResponseDto registerUser(UserRegisterRequestDto userRegisterRequestDto) {
         String normalizedEmail = userRegisterRequestDto.email().toLowerCase();
-        if(!userRepository.existsByEmail(normalizedEmail)) {
-            return null;
+//        if(!userRepository.existsByEmail(normalizedEmail)) {
+//            return null;
+//        } it is registering, there wont be any in the database
+        if(userRepository.existsByEmail(normalizedEmail)) {
+//            throw new ResourceNotFoundException("Email address already in use");
+            throw new IllegalArgumentException("Email address already in use");
+            //why do we do this and not resource not found exception like above?
         }
+
         User newUser = User.builder()
                 .email(userRegisterRequestDto.email())
                 .username(userRegisterRequestDto.username())
@@ -42,11 +48,13 @@ public class UserServiceImpl implements IUserService {
                 .build();
         User savedUser = userRepository.save(newUser);
 //        workspaceService.create(savedUser); //implement later
+//        UserResponseDto newUSer = new UserResponseDto()
         return userMapper.toUserResponseDto(savedUser);
 
     }
 
     @Override
+    @Transactional
     public UserResponseDto updateUser(UUID uuid, UserUpdateRequestDto userUpdateRequestDto) {
         //the uuid is obtained from the security context holder or from the jwt
         User user = userRepository.findById(uuid)
@@ -57,6 +65,7 @@ public class UserServiceImpl implements IUserService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public UserResponseDto getUserProfile(UUID uuid) {
         User user = userRepository.findById(uuid)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id " + uuid));

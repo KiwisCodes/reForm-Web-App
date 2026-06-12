@@ -18,7 +18,7 @@ When designing API contracts (DTOs) and data access layers for multi-tenant coll
      │   - String name                     │      │   - String name                     │
      │   - User owner                      │      │   - UserResponseDto owner           │
      │     ├── String email                │      │     ├── String email                │
-     │     └── String passwordHash 💣      │      │     └── [ NO PASSWORD HASH ]  🛡️     │
+     │     └── String passwordHash 💣      │      │     └── [ NO PASSWORD HASH ]  🛡️    │
      └─────────────────────────────────────┘      └─────────────────────────────────────┘
 ```
 

@@ -11,6 +11,5 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, UUID> {
     //Workspace extends BaseEntity, which has attribute id, so must be id, not uuid
     Optional<Workspace> findById(UUID id);
 
-
     Optional<Workspace> findByOwnerId(UUID id);
 }

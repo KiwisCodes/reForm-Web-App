@@ -1,21 +1,17 @@
 package com.reForm.backend.user.service;
 
 import com.reForm.backend.core.exception.ResourceNotFoundException;
-import com.reForm.backend.user.dto.WorkspaceCreateRequestDto;
-import com.reForm.backend.user.dto.WorkspaceResponseDto;
-import com.reForm.backend.user.dto.WorkspaceUpdateRequestDto;
+import com.reForm.backend.user.dto.*;
 import com.reForm.backend.user.entity.User;
 import com.reForm.backend.user.entity.Workspace;
 import com.reForm.backend.user.mapper.WorkspaceMapper;
 import com.reForm.backend.user.port.IWorkspaceService;
 import com.reForm.backend.user.repository.UserRepository;
 import com.reForm.backend.user.repository.WorkspaceRepository;
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 import java.util.Set;
@@ -31,6 +27,7 @@ public class WorkspaceServiceImpl implements IWorkspaceService {
     private final UserRepository userRepository;
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMapper workspaceMapper;
+
     //everything here should need ownerId, for authorization, big word: tenant isolation
     @Override
     @Transactional
@@ -93,8 +90,8 @@ public class WorkspaceServiceImpl implements IWorkspaceService {
         workspaceRepository.delete(workspace);
         log.info("Workspace deleted");
     }
-
     @Override
+    @Transactional(readOnly = true)
     public WorkspaceResponseDto getWorkspace(UUID ownerId){
         log.info("Get workspace by id");
         Workspace workspace = workspaceRepository
@@ -105,7 +102,8 @@ public class WorkspaceServiceImpl implements IWorkspaceService {
 
     @Override
     @Transactional
-    public WorkspaceResponseDto addMembers(UUID ownerId, Set<String> emails) {
+    public WorkspaceResponseDto addMembers(UUID ownerId, WorkspaceAddMemberRequestDto workspaceAddMemberRequestDto) {
+        Set<String> emails = workspaceAddMemberRequestDto.emails();
         Workspace workspace =  workspaceRepository
                 .findByOwnerId(ownerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Workspace not found with id " + ownerId));
@@ -125,7 +123,8 @@ public class WorkspaceServiceImpl implements IWorkspaceService {
 
     @Override
     @Transactional
-    public WorkspaceResponseDto removeMembers(UUID ownerId,Set<String> emails) {
+    public WorkspaceResponseDto deleteMembers(UUID ownerId, WorkspaceDeleteMemberRequestDto workspaceDeleteMemberRequestDto) {
+        Set<String> emails = workspaceDeleteMemberRequestDto.emails();
         log.info("Remove members from workspace");
         Workspace workspace = workspaceRepository
                 .findByOwnerId(ownerId)
