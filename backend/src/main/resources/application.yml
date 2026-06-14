@@ -1,12 +1,13 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5332/${POSTGRES_DB:reform_db}
+    # Changed 5332 to 5432 to match your new docker-compose.yml!
+    url: jdbc:postgresql://localhost:5432/${POSTGRES_DB:reform_db}
     username: ${POSTGRES_USER:postgres}
     password: ${POSTGRES_PASSWORD:password}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: create-drop #create/update/create-drop
     show-sql: true
     properties:
       hibernate:
@@ -15,3 +16,10 @@ spring:
     redis:
       host: localhost
       port: 6379
+
+# =========================================================================
+# CUSTOM REFORM PLATFORM CONFIGURATIONS (Root Level)
+# =========================================================================
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}

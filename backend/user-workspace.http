@@ -1,0 +1,116 @@
+### =========================================================================
+### 1. MULTI-USER REGISTRATION (Setup Your Users)
+### =========================================================================
+
+# @name RegisterOwner
+# Register User 1: Alex (The Workspace Owner)
+POST http://localhost:8080/api/v1/users/register
+Content-Type: application/json
+
+{
+  "email": "alex@reform.app",
+  "password": "securepassword123",
+  "username": "Alex Owner"
+}
+
+###
+
+# @name RegisterMember1
+# Register User 2: Bob (Collaborator 1)
+POST http://localhost:8080/api/v1/users/register
+Content-Type: application/json
+
+{
+  "email": "bob@reform.app",
+  "password": "securepassword123",
+  "username": "Bob Collaborator"
+}
+
+###
+
+# @name RegisterMember2
+# Register User 3: Charlie (Collaborator 2)
+POST http://localhost:8080/api/v1/users/register
+Content-Type: application/json
+
+{
+  "email": "charlie@reform.app",
+  "password": "securepassword123",
+  "username": "Charlie Collaborator"
+}
+
+### =========================================================================
+### 2. THE CORE ID VARIABLES (Copy-paste your generated IDs below)
+### =========================================================================
+@alexId = 3d9efb3c-13c8-4a32-973b-f7687daf64a9
+@workspaceId = 06ad5351-ce08-4a61-afe7-476e351c8de1
+
+### =========================================================================
+### 3. WORKSPACE CORE FLOW
+### =========================================================================
+
+# A. Create Workspace (Owned by Alex)
+# Note: On registration, Alex's workspace is auto-created.
+# Use this POST if you want to manually create an extra one.
+POST http://localhost:8080/api/v1/workspaces/{{alexId}}
+Content-Type: application/json
+
+{
+  "name": "Alex Tech Team",
+  "description": "Collaborative workspace for platform engineers"
+}
+
+###
+
+# B. Get Workspace Details (Using 'requesterId' query parameter to prove ownership!)
+GET http://localhost:8080/api/v1/workspaces/{{workspaceId}}?requesterId={{alexId}}
+
+###
+
+# C. Update Workspace Metadata (PATCH - Validated by requesterId)
+PATCH http://localhost:8080/api/v1/workspaces/{{workspaceId}}?requesterId={{alexId}}
+Content-Type: application/json
+
+{
+  "name": "Reform Core Platform Team",
+  "description": "Enterprise-grade multi-tenant workspace"
+}
+
+### =========================================================================
+### 4. TEAM MEMBERSHIP COLLABORATION FLOW
+### =========================================================================
+
+# D. Bulk-Add Members (Invite Bob and Charlie by their emails)
+# Secure: Requires Alex's ID in the query param to allow the write!
+POST http://localhost:8080/api/v1/workspaces/{{workspaceId}}/members?requesterId={{alexId}}
+Content-Type: application/json
+
+{
+  "emails": [
+    "bob@reform.app",
+    "charlie@reform.app"
+  ]
+}
+
+###
+
+# E. Get Workspace Details (Verify Bob & Charlie are successfully inside the members list!)
+GET http://localhost:8080/api/v1/workspaces/{{workspaceId}}?requesterId={{alexId}}
+
+###
+
+# F. Bulk-Remove Members (Kick Bob, leaving only Charlie)
+# Secure: Requires Alex's ID in the query param to allow the delete!
+DELETE http://localhost:8080/api/v1/workspaces/{{workspaceId}}/members?requesterId={{alexId}}
+Content-Type: application/json
+
+{
+  "emails": [
+    "bob@reform.app"
+  ]
+}
+
+###
+
+# G. Final Verification (Verify Bob is gone, only Charlie remains)
+GET http://localhost:8080/api/v1/workspaces/{{workspaceId}}?requesterId={{alexId}}

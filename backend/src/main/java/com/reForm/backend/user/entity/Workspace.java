@@ -19,12 +19,12 @@ import java.util.Set;
 public class Workspace extends BaseEntity {
 
     @Column(nullable = false)
-    private String workspaceName;
+    private String name;
 
 
-    private String workspaceDescription;
+    private String description;
 
-    @OneToOne(fetch = FetchType.LAZY, optional = false)
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(nullable = false, name = "owner_id")
     private User owner;
     //select * from workspace where ws id is true
@@ -33,16 +33,18 @@ public class Workspace extends BaseEntity {
     //User uuid workspace_id fk
 
 
-    //this is the many to many, but now we want: one user only have 1 workspace, and can be invited to many workspaces
-//    @ManyToMany(fetch = FetchType.LAZY)
-//    @JoinTable(
-//            name = "workspace_members",
-//            joinColumns = @JoinColumn(name="workspace_id"),
-//            inverseJoinColumns = @JoinColumn(name="member_id")
-//    )
-//    private Set<User> members = new HashSet<>();
-
-
-    @OneToMany(fetch = FetchType.LAZY)
+//    this is the many to many, but now we want: one user only have 1 workspace, and can be invited to many workspaces
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+            name = "workspace_members",
+            joinColumns = @JoinColumn(name="workspace_id"),
+            inverseJoinColumns = @JoinColumn(name="member_id")
+    )
+    @Builder.Default
     private Set<User> members = new HashSet<>();
+    //if you dont have builder.default, when you make new workspace, the builder point to null
+
+
+//    @OneToMany(fetch = FetchType.LAZY)
+//    private Set<User> members = new HashSet<>();
 }

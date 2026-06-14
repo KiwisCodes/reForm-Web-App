@@ -4,6 +4,7 @@ import com.reForm.backend.core.exception.ResourceNotFoundException;
 import com.reForm.backend.user.dto.UserRegisterRequestDto;
 import com.reForm.backend.user.dto.UserResponseDto;
 import com.reForm.backend.user.dto.UserUpdateRequestDto;
+import com.reForm.backend.user.dto.WorkspaceCreateRequestDto;
 import com.reForm.backend.user.entity.Role;
 import com.reForm.backend.user.entity.User;
 import com.reForm.backend.user.mapper.UserMapper;
@@ -45,9 +46,14 @@ public class UserServiceImpl implements IUserService {
                 .username(userRegisterRequestDto.username())
                 .role(Role.FORM_BUILDER)
                 .passwordHash(passwordEncoder.encode(userRegisterRequestDto.password()))
+//                .passwordHash("dummy hash")
                 .build();
         User savedUser = userRepository.save(newUser);
-//        workspaceService.create(savedUser); //implement later
+        WorkspaceCreateRequestDto newWorkspaceCreateRequest = new WorkspaceCreateRequestDto(
+                savedUser.getUsername() + " 's Workspace",
+                "Default user's workspace"
+        );
+        workspaceService.createWorkspace(savedUser.getId(), newWorkspaceCreateRequest); //implement later
 //        UserResponseDto newUSer = new UserResponseDto()
         return userMapper.toUserResponseDto(savedUser);
 

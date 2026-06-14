@@ -21,8 +21,8 @@ public abstract class BaseEntity {
     @Column(name = "id", updatable = false, nullable = false)
     private UUID id;
 
-    @Column(name = "created_date", updatable = false, nullable = false)
-    private LocalDateTime createdDate;
+    @Column(name = "created_at", updatable = false, nullable = false)
+    private LocalDateTime createdAt;
 
     @Column(name = "last_modified_date")
     private LocalDateTime lastModifiedDate;
@@ -35,8 +35,8 @@ public abstract class BaseEntity {
         if (id == null) {
             id = UUID.randomUUID();
         }
-        createdDate = LocalDateTime.now();
-        lastModifiedDate = createdDate;
+        createdAt = LocalDateTime.now();
+        lastModifiedDate = createdAt;
     }
 
     @PreUpdate
