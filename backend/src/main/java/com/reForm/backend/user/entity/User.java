@@ -26,13 +26,13 @@ import java.util.UUID;
 @AllArgsConstructor
 public class User extends BaseEntity {
 
-    @Column(name = "email", nullable = false)
+    @Column(name = "email", nullable = false, unique = true)
     private String email;
 
     @Column(name = "password_hash", nullable = false)
     private String passwordHash;
 
-    @Column(name = "username")
+    @Column(name = "username", nullable = false)
     private String username;
 
     //check this

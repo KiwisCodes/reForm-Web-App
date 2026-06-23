@@ -1,5 +1,11 @@
+### Recommended File Name:
+Save this document as:
+📂 `knowledge/10-api-controller-security-and-runtime-troubleshooting.md`
+
+---
+
 # Architectural Specification: API Controllers, Security Configuration & Runtime Troubleshooting
-**Document Version:** 1.0  
+**Document Version:** 1.2  
 **Target Platform:** Reform (Modular Monolith)  
 **Author:** Senior Technical Lead
 
@@ -7,9 +13,9 @@
 
 ## 1. Introduction: The Milestone Overview
 
-This specification documents the successful completion of the **Presentation Layer (Controllers)** and the systematic resolution of compile-time, environment, and database-connectivity issues.
+This specification documents the successful completion of the **Presentation Layer (Controllers)** and the systematic resolution of compile-time, environment, database-connectivity, and structural data mapping issues.
 
-By resolving these issues, the core foundational loop of the **Reform** monolith is fully complete: **A user can now register, view their profile, and modify their workspace with pristine transaction controls, secure data mapping boundaries, and stable infrastructure configurations.**
+By resolving these issues, the core foundational loop of the **Reform** monolith is fully complete. The system now supports a highly secure, performant multi-tenant database schema: **1 User owns exactly 1 Workspace (1-to-1), but can be invited to collaborate as a member inside multiple other workspaces (Many-to-Many).**
 
 ```text
                      THE COMPLETED MVP RUNTIME FLOW
@@ -27,7 +33,7 @@ By resolving these issues, the core foundational loop of the **Reform** monolith
 
 ## 2. Chronological Troubleshooting & Resolution Log
 
-This section details the actual technical errors encountered during the build phase of the controller layer, why they happened, and how they were resolved.
+This section details the actual technical errors encountered during the build phase of the controller and service layers, why they happened, and how they were resolved.
 
 ---
 
@@ -156,6 +162,48 @@ We created a central security configuration class (`SecurityConfig.java`) annota
 
 ---
 
+### Step 5: Resolving the Lombok `@Builder` Null Pointer Trap
+
+#### The Error:
+```text
+java.lang.NullPointerException: Cannot invoke "java.util.Set.addAll(java.util.Collection)" because the return value of "com.reForm.backend.user.entity.Workspace.getMembers()" is null
+```
+
+#### The Diagnosis:
+When you use Lombok's `@Builder` annotation on an entity, the builder completely ignores any inline default field initializations (like `private Set<User> members = new HashSet<>();`).
+
+Instead, when the builder instantiates the object (such as inside `createWorkspace`), it sets the `members` collection field to **`null`**. When the `addMembers` service method later attempted to call `workspace.getMembers().addAll(newMembers)`, the application threw a `NullPointerException` (HTTP 500).
+
+#### The Fix:
+We annotated the collections inside both `User.java` and `Workspace.java` with **`@Builder.Default`**. This instructs Lombok's builder to preserve the `new HashSet<>()` initialization during instantiation instead of overwriting it with `null`.
+
+---
+
+### Step 6: Resolving the Stale Target Folder & SQL Column Mismatch
+
+#### The Error:
+```text
+org.postgresql.util.PSQLException: ERROR: column t1.name does not exist
+```
+
+#### The Diagnosis:
+We renamed the fields in `Workspace.java` from `workspaceName` and `workspaceDescription` to `name` and `description`.
+
+However, because the local Postgres database volume had already been initialized with the old column names, PostgreSQL did not contain the columns `name` and `description`. Additionally, MapStruct was executing cached code from the `/target` folder built on the old variables, resulting in SQL exceptions and runtime crashes.
+
+#### The Fix:
+We cleared the target folder, forced a clean MapStruct regeneration, and completely wiped the old database volumes in Docker:
+```bash
+# 1. Force MapStruct to rebuild the mappers cleanly in IntelliJ
+Double-click 'clean' then 'compile' in the right-side Maven panel.
+
+# 2. Completely wipe the old database columns and volumes
+docker-compose down -v
+docker-compose up -d --force-recreate
+```
+
+---
+
 ## 3. Core Architectural Explanations (The "Whys")
 
 ### A. The Noun-First Controller Design
@@ -165,223 +213,26 @@ We explicitly rejected the technical method naming pattern (starting with `handl
 *   **Why verbs in URLs are bad:** In REST, **the URL represents the Noun (the resource), and the HTTP Method represents the Verb (the action).**
     *   `POST /api/v1/workspaces` means "Create Workspace".
     *   `POST /api/v1/workspaces/create` is redundant (it means "Create Create Workspace").
-*   **The Conceptual Alignment:** Matching the controller method name (`getUserProfile`) exactly to the service port method name (`IUserService.getUserProfile`) lowers the cognitive load of tracing data paths in your IDE.
+*   **The Model Alignment:** Matching the controller method name (`getUserProfile`) exactly to the service port method name (`IUserService.getUserProfile`) lowers the cognitive load of tracing data paths in your IDE.
 
-### B. The Security Danger of `CascadeType.ALL` on Many-to-Many
+### B. In-Process Tenant Isolation (IDOR Protection)
+To completely prevent **Insecure Direct Object Reference (IDOR)** attacks—where logged-in User A tries to edit or delete User B's workspace—we implemented strict identity verification in the service layer:
+
+```java
+private void verifyOwner(Workspace workspace, UUID requesterId) {
+    if (!workspace.getOwner().getId().equals(requesterId)) {
+        throw new AccessDeniedException("Only the workspace owner can perform this action");
+    }
+}
+```
+*   Every workspace retrieval, update, or membership modification requires the `requesterId` (which will eventually be extracted securely from the JWT).
+*   The system loads the workspace by its primary key and verifies that the owner's ID matches the requester's ID before executing any operations. If they do not match, it throws an `AccessDeniedException` (HTTP 403), locking out malicious actors completely.
+
+### C. The Security Danger of `CascadeType.ALL` on Many-to-Many
 *   We explicitly removed `cascade = CascadeType.ALL` from our `@ManyToMany` mapping on `User.workspaces` and `Workspace.members`.
 *   **The Risk:** If an owner decides to delete their `Workspace`, `CascadeType.ALL` would instruct Hibernate to automatically propagate that deletion, physically deleting the user profiles of **every single collaborator inside that workspace** from your `users` database table!
 
----
-
-## 4. The Finalized Production-Ready Files
-
-### 📄 `application.yml`
-```yaml
-spring:
-  datasource:
-    url: jdbc:postgresql://localhost:5432/${POSTGRES_DB:reform_db}
-    username: ${POSTGRES_USER:postgres}
-    password: ${POSTGRES_PASSWORD:password}
-    driver-class-name: org.postgresql.Driver
-  jpa:
-    hibernate:
-      ddl-auto: update
-    show-sql: true
-    properties:
-      hibernate:
-        format_sql: true
-  data:
-    redis:
-      host: localhost
-      port: 6379
-
-# =========================================================================
-# CUSTOM REFORM PLATFORM CONFIGURATIONS (Root Level)
-# =========================================================================
-app:
-  cors:
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
-```
-
----
-
-### 📄 `SecurityConfig.java`
-```java
-package com.reForm.backend.auth.config;
-
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
-
-@Configuration
-public class SecurityConfig {
-
-    /**
-     * Declares the global BCrypt PasswordEncoder Bean.
-     * Generates a unique, secure salt for every password before hashing.
-     */
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
-}
-```
-
----
-
-### 📄 `UserController.java`
-```java
-package com.reForm.backend.user.controller;
-
-import com.reForm.backend.user.dto.UserRegisterRequestDto;
-import com.reForm.backend.user.dto.UserResponseDto;
-import com.reForm.backend.user.dto.UserUpdateRequestDto;
-import com.reForm.backend.user.port.IUserService;
-import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.UUID;
-
-@RestController
-@RequestMapping("/api/v1/users")
-@RequiredArgsConstructor
-@CrossOrigin(origins = "${app.cors.allowed-origins:http://localhost:3000}")
-@Slf4j
-@Validated
-public class UserController {
-
-    private final IUserService userService;
-
-    @GetMapping("/{id}")
-    public ResponseEntity<UserResponseDto> getUserProfile(@PathVariable UUID id) {
-        log.info("GET request to retrieve user profile for ID: {}", id);
-        UserResponseDto userResponseDto = userService.getUserProfile(id);
-        return ResponseEntity.status(HttpStatus.OK).body(userResponseDto); // 200 OK
-    }
-
-    @PostMapping("/register")
-    public ResponseEntity<UserResponseDto> registerUser(@RequestBody @Valid UserRegisterRequestDto request) {
-        log.info("POST request to register user: {}", request.email());
-        UserResponseDto userResponseDto = userService.registerUser(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(userResponseDto); // 201 Created
-    }
-
-    @PatchMapping("/{id}")
-    public ResponseEntity<UserResponseDto> updateUserProfile(
-            @PathVariable UUID id, 
-            @RequestBody @Valid UserUpdateRequestDto request
-    ) {
-        log.info("PATCH request to update user profile for ID: {}", id);
-        UserResponseDto userResponseDto = userService.updateUser(id, request);
-        return ResponseEntity.status(HttpStatus.OK).body(userResponseDto); // 200 OK
-    }
-
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteUser(@PathVariable UUID id) {
-        log.info("DELETE request to delete user account for ID: {}", id);
-        userService.deleteUser(id);
-        return ResponseEntity.status(HttpStatus.NO_CONTENT).build(); // 204 No Content
-    }
-}
-```
-
----
-
-### 📄 `WorkspaceController.java`
-```java
-package com.reForm.backend.user.controller;
-
-import com.reForm.backend.user.dto.*;
-import com.reForm.backend.user.port.IWorkspaceService;
-import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.UUID;
-
-@RestController
-@RequestMapping("/api/v1/workspaces")
-@RequiredArgsConstructor
-@CrossOrigin(origins = "${app.cors.allowed-origins:http://localhost:3000}")
-@Slf4j
-@Validated
-public class WorkspaceController {
-
-    private final IWorkspaceService workspaceService;
-
-    @GetMapping("/{id}")
-    public ResponseEntity<WorkspaceResponseDto> getWorkspace(@PathVariable UUID id) {
-        log.info("GET request to retrieve workspace details for owner ID: {}", id);
-        WorkspaceResponseDto response = workspaceService.getWorkspace(id);
-        return ResponseEntity.status(HttpStatus.OK).body(response); // 200 OK
-    }
-
-    @PostMapping("/{id}")
-    public ResponseEntity<WorkspaceResponseDto> createWorkspace(
-            @PathVariable UUID id, 
-            @RequestBody @Valid WorkspaceCreateRequestDto request
-    ) {
-        log.info("POST request to create new workspace for owner ID: {}", id);
-        WorkspaceResponseDto response = workspaceService.createWorkspace(id, request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(response); // 201 Created
-    }
-
-    @PatchMapping("/{id}")
-    public ResponseEntity<WorkspaceResponseDto> updateWorkspace(
-            @PathVariable UUID id, 
-            @RequestBody @Valid WorkspaceUpdateRequestDto request
-    ) {
-        log.info("PATCH request to update workspace metadata for owner ID: {}", id);
-        WorkspaceResponseDto response = workspaceService.updateWorkspace(id, request);
-        return ResponseEntity.status(HttpStatus.OK).body(response); // 200 OK
-    }
-
-    @PostMapping("/{id}/members")
-    public ResponseEntity<WorkspaceResponseDto> addMembers(
-            @PathVariable UUID id, 
-            @RequestBody @Valid WorkspaceAddMemberRequestDto request
-    ) {
-        log.info("POST request to bulk-add members to workspace owned by ID: {}", id);
-        WorkspaceResponseDto response = workspaceService.addMembers(id, request);
-        return ResponseEntity.status(HttpStatus.OK).body(response); // 200 OK
-    }
-
-    @PostMapping("/{id}/members/remove")
-    public ResponseEntity<WorkspaceResponseDto> removeMembers(
-            @PathVariable UUID id, 
-            @RequestBody @Valid WorkspaceDeleteMemberRequestDto request
-    ) {
-        log.info("POST request to bulk-remove members from workspace owned by ID: {}", id);
-        WorkspaceResponseDto response = workspaceService.deleteMembers(id, request);
-        return ResponseEntity.status(HttpStatus.OK).body(response); // 200 OK
-    }
-
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteWorkspace(@PathVariable UUID id) {
-        log.info("DELETE request to destroy workspace owned by ID: {}", id);
-        workspaceService.deleteWorkspace(id);
-        return ResponseEntity.status(HttpStatus.NO_CONTENT).build(); // 204 No Content
-    }
-}
-```
-
----
-
-## 🏁 Socratic Review & Checkout
-
-1.  **CORS Property Fallback:** Look at our `@CrossOrigin` config: `@CrossOrigin(origins = "${app.cors.allowed-origins:http://localhost:3000}")`.
-    *   *Question:* What is the purpose of the `:http://localhost:3000` segment inside the expression? How does it make life easier for a new developer who has just cloned your project but doesn't have any environment variables set up on their system?
-2.  **The API Gateway Leap:**
-    *   *Question:* Now that your Controller presentation layer is completely finished, how does having clean, versioned, REST-compliant endpoint URLs (like `/api/v1/workspaces/{id}`) prepare you to put an **API Gateway (Nginx or Kong)** in front of your monolith as your traffic scales?
-
-**Your architecture is now exceptionally robust, secure, and production-ready. Let's move on to running those Postman tests and proving your hard work works!**
+### D. Why We Need Spring's `@Transactional(readOnly = true)` for GET Queries
+*   By default, `@Transactional` opens a heavy read-write transaction.
+*   When Hibernate loads data inside a read-write transaction, it takes a copy of the entity and keeps it in memory so it can check if you modified any fields at the end of the method (Dirty Checking).
+*   By writing `@Transactional(readOnly = true)` on `getUserProfile()` and `getWorkspace()`, you tell Hibernate: *"I am only reading this profile. Do not waste memory keeping a tracking copy."* This optimizes database memory and connection speeds under high load.

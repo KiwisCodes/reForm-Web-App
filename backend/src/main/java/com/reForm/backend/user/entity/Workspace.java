@@ -22,7 +22,7 @@ public class Workspace extends BaseEntity {
     private String name;
 
 
-    private String description;
+    private String description; 
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(nullable = false, name = "owner_id")

@@ -42,7 +42,8 @@ public class UserServiceImpl implements IUserService {
         }
 
         User newUser = User.builder()
-                .email(userRegisterRequestDto.email())
+//                .email(userRegisterRequestDto.email()) this email is not normalized
+                .email(normalizedEmail)
                 .username(userRegisterRequestDto.username())
                 .role(Role.FORM_BUILDER)
                 .passwordHash(passwordEncoder.encode(userRegisterRequestDto.password()))

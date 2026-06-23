@@ -1,0 +1,2 @@
+should username in User be unique,
+when I add new members to workspace, i can do it with emails now, but cant do it with username, username must be unique for this to work, and I must overload the current addMember method or something

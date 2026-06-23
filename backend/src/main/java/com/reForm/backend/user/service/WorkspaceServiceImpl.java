@@ -125,14 +125,16 @@ public class WorkspaceServiceImpl implements IWorkspaceService {
                 .findById(workspaceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Workspace not found with id " + workspaceId));
         verifyOwner(workspace, requesterId);
-        Set<User> newMembers = emails
-                .stream()
-                .map(String::toLowerCase)
-                .map(userRepository::findByEmail)
-                .filter(Optional::isPresent)//return the Optional objects from the last stream, not stream of true false, it will let the object goes through if the object goes through the isPresent and return true
-                .map(Optional::get)
-                .collect(Collectors.toSet()); //this never returns null, it returns at least an empty set
+        //this code under gets us N+1 problem
+//        Set<User> newMembers = emails
+//                .stream()
+//                .map(String::toLowerCase)
+//                .map(userRepository::findByEmail)
+//                .filter(Optional::isPresent)//return the Optional objects from the last stream, not stream of true false, it will let the object goes through if the object goes through the isPresent and return true
+//                .map(Optional::get)
+//                .collect(Collectors.toSet()); //this never returns null, it returns at least an empty set
 //        if(newMembers != null && !newMembers.isEmpty()) { so we dont need the check here
+        Set<User> newMembers = userRepository.findAllByEmailIn(emails);
         workspace.getMembers().addAll(newMembers);
 //        }
         Workspace savedWorkspace = workspaceRepository.save(workspace);
@@ -151,17 +153,16 @@ public class WorkspaceServiceImpl implements IWorkspaceService {
                 .findById(workspaceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Workspace not found with id " + workspaceId));
         verifyOwner(workspace, requesterId);
-        Set<User> removeMembers = emails
-                .stream()
-                .map(String::toLowerCase)
-                .map(userRepository::findByEmail)
-                .filter(Optional::isPresent)
-                .map(Optional::get)
-                .collect(Collectors.toSet());
-
-//        if(removeMembers != null && !removeMembers.isEmpty()) {
+        //this code under gets us N+1 problem
+//        Set<User> removeMembers = emails
+//                .stream()
+//                .map(String::toLowerCase)
+//                .map(userRepository::findByEmail)
+//                .filter(Optional::isPresent)
+//                .map(Optional::get)
+//                .collect(Collectors.toSet());
+        Set<User> removeMembers = userRepository.findAllByEmailIn(emails);
         workspace.getMembers().removeAll(removeMembers);
-//        }
 
         Workspace savedWorkspace = workspaceRepository.save(workspace);
         log.info("Members removed");
@@ -176,4 +177,5 @@ public class WorkspaceServiceImpl implements IWorkspaceService {
             throw new AccessDeniedException("Only the workspace owner can perform this action");
         }
     }
+
 }
