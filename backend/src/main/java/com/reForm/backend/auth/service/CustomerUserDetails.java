@@ -14,10 +14,10 @@ import java.util.UUID;
 //spring has an interface for us to do exactly that, which is UserDetails
 //there will be a customerDetailService, that needs to do its job, it will get the User,
 //you then make a new CustomerUserDetail object to wrap this User, thats why we need the constructor
-public class CustomerUserDetail implements UserDetails {
+public class CustomerUserDetails implements UserDetails {
     private final User user;
 
-    public CustomerUserDetail(User user) {
+    public CustomerUserDetails(User user) {
         this.user = user;
     }
 

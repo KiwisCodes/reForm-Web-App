@@ -18,6 +18,6 @@ public class CustomerUserDetailService implements UserDetailsService {
         String normalizedEmail = email.toLowerCase();
         User user = userRepository.findByEmail(normalizedEmail)
                 .orElseThrow(() -> new UsernameNotFoundException("Could not find user with email: " + normalizedEmail));
-        return new CustomerUserDetail(user);
+        return new CustomerUserDetails(user);
     }
 }

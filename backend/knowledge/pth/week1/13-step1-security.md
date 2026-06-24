@@ -228,6 +228,7 @@ public class CustomerUserDetail implements UserDetails {
 ```
 
 ### 2. The Database Lookup Service
+
 ```java
 package com.reForm.backend.auth.service;
 
@@ -252,7 +253,7 @@ public class CustomerUserDetailService implements UserDetailsService {
                 .orElseThrow(() -> new UsernameNotFoundException(
                         "Could not find user with email: " + normalizedEmail
                 ));
-        return new CustomerUserDetail(user);
+        return new CustomerUserDetails(user);
     }
 }
 ```

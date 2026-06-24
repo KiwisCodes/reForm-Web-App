@@ -1,9 +1,9 @@
 spring:
   datasource:
     # Changed 5332 to 5432 to match your new docker-compose.yml!
-    url: jdbc:postgresql://localhost:5432/${POSTGRES_DB:reform_db}
-    username: ${POSTGRES_USER:postgres}
-    password: ${POSTGRES_PASSWORD:password}
+    url: jdbc:postgresql://localhost:5432/${POSTGRES_DB}
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
@@ -23,3 +23,6 @@ spring:
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+  security:
+      secret: ${JWT_SECRET_KEY}
+      expiration-ms: ${EXPIRATION_DURATION:3600000}
