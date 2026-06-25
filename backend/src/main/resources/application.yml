@@ -1,4 +1,10 @@
 spring:
+  jackson:
+    # Changes camelCase Java variables to snake_case in your JSON responses globally
+    property-naming-strategy: SNAKE_CASE
+    # Prevents dates from being written as ugly computer timestamps (e.g., [2026,6,25])
+#    serialization:
+
   datasource:
     # Changed 5332 to 5432 to match your new docker-compose.yml!
     url: jdbc:postgresql://localhost:5432/${POSTGRES_DB}
