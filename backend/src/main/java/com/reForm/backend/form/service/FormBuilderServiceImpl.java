@@ -12,6 +12,7 @@ import com.reForm.backend.form.repository.FormRepository;
 import jakarta.transaction.Transactional;
 import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -50,6 +51,7 @@ public class FormBuilderServiceImpl implements IFormBuilderService {
 
     @Transactional
     @Override
+    @CacheEvict(value = "forms", key = "#result.slug")
     public FormResponseDto updateBlocks(FormUpdateDto request) {
         Form form = repository.findByIdAndWorkspaceId(request.id(), request.workspaceId())
                 .orElseThrow(() -> new IllegalStateException(request.id() + "not found!"));
@@ -58,11 +60,15 @@ public class FormBuilderServiceImpl implements IFormBuilderService {
         return mapper.toResponseDto(form);
     }
 
+    @Transactional
     @Override
-    public void delete(UUID id, UUID workspaceId) {
+    @CacheEvict(value = "forms", key = "#result")
+    public String delete(UUID id, UUID workspaceId) {
         Form form = repository.findByIdAndWorkspaceId(id, workspaceId)
                 .orElseThrow(() -> new IllegalStateException(id + "not found!"));
+        String slug = form.getSlug();
         repository.delete(form);
+        return slug;
     }
 
 }

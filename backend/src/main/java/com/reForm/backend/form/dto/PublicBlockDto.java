@@ -5,7 +5,7 @@ import com.reForm.backend.form.entity.block.BlockType;
 public record PublicBlockDto(
         BlockType type,
         String label,
-        String description,
+        String description, // change after fixing StaticBlock
         boolean isRequired,
         Integer sortOrder
 ) {

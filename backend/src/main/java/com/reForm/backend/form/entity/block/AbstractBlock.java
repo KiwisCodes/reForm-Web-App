@@ -2,6 +2,7 @@ package com.reForm.backend.form.entity.block;
 
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.reForm.backend.form.entity.block.staticblock.StaticBlock;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -21,7 +22,7 @@ import java.util.UUID;
 
 public abstract class AbstractBlock implements IFormBlock{
 
-    private UUID id = UUID.randomUUID();;
+    private UUID id = UUID.randomUUID();
     private String label;
     private String description;
     private boolean isRequired;

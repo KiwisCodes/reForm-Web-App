@@ -12,6 +12,7 @@ public record FormResponseDto(
         String title,
         FormStatus status,
         List<AbstractBlock> blocks,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        String slug
 ) {
 }

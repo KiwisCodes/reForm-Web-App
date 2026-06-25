@@ -11,4 +11,5 @@ public interface FormRepository extends JpaRepository<Form, UUID> {
 
     List<Form> findByWorkspaceIdOrderByCreatedDateDesc(UUID workspaceId);
     Optional<Form> findByIdAndWorkspaceId(UUID id, UUID workspaceId);
+    Optional<Form> findBySlug(String slug);
 }
