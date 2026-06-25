@@ -19,6 +19,6 @@ public interface IFormBuilderService {
 
     public FormResponseDto updateBlocks(FormUpdateDto request);
 
-    public void delete(UUID id, UUID workspaceId);
+    public String delete(UUID id, UUID workspaceId);
 
 }

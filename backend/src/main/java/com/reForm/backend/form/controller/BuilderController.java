@@ -35,7 +35,7 @@ public class BuilderController {
     }
 
     @PostMapping(params = "title")
-    public ResponseEntity<FormResponseDto> createForm(@RequestHeader("X-Workspace-Id") UUID workspaceId
+    public ResponseEntity<FormResponseDto> createForm(@RequestHeader("X-Workspace-Id") UUID workspaceId // Add list of blocks
             , @RequestBody FormCreateDto request){
         return ResponseEntity.ok(service.createForm(request));
     }
