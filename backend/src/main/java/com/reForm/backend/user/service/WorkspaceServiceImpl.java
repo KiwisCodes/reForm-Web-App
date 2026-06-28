@@ -14,10 +14,8 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 
 @Service
@@ -34,11 +32,11 @@ public class WorkspaceServiceImpl implements IWorkspaceService {
     @Transactional
 //    @ResponseStatus(HttpStatus.CREATED) this is wrong, this is the work of the controllers
     public WorkspaceResponseDto createWorkspace(
-            UUID requester,
+            UUID owner,
             WorkspaceCreateRequestDto workspaceCreateRequestDto) {
         log.info("Create new workspace");
-        User user = userRepository.findById(requester)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found with id " + requester));
+        User user = userRepository.findById(owner)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id " + owner));
 
         Workspace workspace = Workspace.builder()
                 .owner(user)
@@ -47,15 +45,16 @@ public class WorkspaceServiceImpl implements IWorkspaceService {
                 .build();
         log.info("Workspace created");
 
-        Workspace savedWorkspace = workspaceRepository.save(workspace);
+//        Workspace savedWorkspace = workspaceRepository.save(workspace);
+        // for first time creation, you must save it
 
-        return workspaceMapper.toWorkspaceResponseDto(savedWorkspace);
+        return workspaceMapper.toWorkspaceResponseDto(workspaceRepository.save(workspace));
     }
 
     @Override
     @Transactional
     public WorkspaceResponseDto updateWorkspace(
-            UUID requesterId,
+//            UUID requesterId,
             UUID workspaceId,
             WorkspaceUpdateRequestDto workspaceUpdateRequestDto) {
         log.info("Update workspace");
@@ -64,11 +63,12 @@ public class WorkspaceServiceImpl implements IWorkspaceService {
 //        User owner = userRepository
 //                .findById(requesterId)
 //                .orElseThrow(() -> new ResourceNotFoundException("User not found with id " + requesterId));
+
         Workspace workspace = workspaceRepository
                 .findById(workspaceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Workspace not found with id " + workspaceId));
 
-        verifyOwner(workspace, requesterId);
+//        verifyOwner(workspace, requesterId);
 
         //because user can update either name or description or both
         //we need to check it first before we update
@@ -81,50 +81,53 @@ public class WorkspaceServiceImpl implements IWorkspaceService {
             workspace.setDescription(workspaceUpdateRequestDto.description());
         }
         log.info("Workspace updated");
-        Workspace savedWorkspace = workspaceRepository.save(workspace);
-        return workspaceMapper.toWorkspaceResponseDto(savedWorkspace);
+//        Workspace savedWorkspace = workspaceRepository.save(workspace);
+        return workspaceMapper.toWorkspaceResponseDto(workspace);
     }
 
     //there is nothing left to return, so must be void
     @Override
     @Transactional
     public void deleteWorkspace(
-            UUID requesterId,
+//            UUID requesterId,
             UUID workspaceId) {
         log.info("Delete workspace");
 //        User owner = userRepository
 //                .findById(ownerId)
 //                .orElseThrow(() -> new ResourceNotFoundException("User not found with id " + ownerId));
-        Workspace workspace = workspaceRepository.findById(workspaceId)
+        Workspace workspace = workspaceRepository
+                .findById(workspaceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Workspace not found with id " + workspaceId));
-        verifyOwner(workspace, requesterId);
+//        verifyOwner(workspace, requesterId);
         workspaceRepository.delete(workspace);
         log.info("Workspace deleted");
     }
+
     @Override
     @Transactional(readOnly = true)
     public WorkspaceResponseDto getWorkspace(
-            UUID requesterId,
+//            UUID requesterId,
             UUID workspaceId){
         log.info("Get workspace by id");
         Workspace workspace = workspaceRepository
                 .findById(workspaceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Workspace not found with id " + workspaceId));
-        verifyOwner(workspace, requesterId);
+//        verifyOwner(workspace, requesterId);
         return workspaceMapper.toWorkspaceResponseDto(workspace);
     }
 
     @Override
     @Transactional
     public WorkspaceResponseDto addMembers(
-            UUID requesterId,
+//            UUID requesterId,
             UUID workspaceId,
             WorkspaceAddMemberRequestDto workspaceAddMemberRequestDto) {
         Set<String> emails = workspaceAddMemberRequestDto.emails();
+        // OPTIMIZED: Uses findWithMembersById to load workspace and members in 1 single query
         Workspace workspace =  workspaceRepository
-                .findById(workspaceId)
+                .findWithMembersById(workspaceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Workspace not found with id " + workspaceId));
-        verifyOwner(workspace, requesterId);
+//        verifyOwner(workspace, requesterId);
         //this code under gets us N+1 problem
 //        Set<User> newMembers = emails
 //                .stream()
@@ -137,22 +140,22 @@ public class WorkspaceServiceImpl implements IWorkspaceService {
         Set<User> newMembers = userRepository.findAllByEmailIn(emails);
         workspace.getMembers().addAll(newMembers);
 //        }
-        Workspace savedWorkspace = workspaceRepository.save(workspace);
-        return workspaceMapper.toWorkspaceResponseDto(savedWorkspace);
+//        Workspace savedWorkspace = workspaceRepository.save(workspace);
+        return workspaceMapper.toWorkspaceResponseDto(workspace);
     }
 
     @Override
     @Transactional
     public WorkspaceResponseDto deleteMembers(
-            UUID requesterId,
+//            UUID requesterId,
             UUID workspaceId,
             WorkspaceDeleteMemberRequestDto workspaceDeleteMemberRequestDto) {
         Set<String> emails = workspaceDeleteMemberRequestDto.emails();
         log.info("Remove members from workspace");
         Workspace workspace = workspaceRepository
-                .findById(workspaceId)
+                .findWithMembersById(workspaceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Workspace not found with id " + workspaceId));
-        verifyOwner(workspace, requesterId);
+//        verifyOwner(workspace, requesterId);
         //this code under gets us N+1 problem
 //        Set<User> removeMembers = emails
 //                .stream()
@@ -164,14 +167,16 @@ public class WorkspaceServiceImpl implements IWorkspaceService {
         Set<User> removeMembers = userRepository.findAllByEmailIn(emails);
         workspace.getMembers().removeAll(removeMembers);
 
-        Workspace savedWorkspace = workspaceRepository.save(workspace);
+//        Workspace savedWorkspace = workspaceRepository.save(workspace);
         log.info("Members removed");
-        return workspaceMapper.toWorkspaceResponseDto(savedWorkspace);
+        return workspaceMapper.toWorkspaceResponseDto(workspace);
     }
 
     // Helper method — ADDED: rather than copy-pasting the owner check in every method,
     // extract it. This is the authorization logic that Spring Security will replace later.
     // When you add Security, delete this method and handle it in a @PreAuthorize annotation.
+    //now that we have the WorkspaceSecurity class (a bean for authorization) we now dont need this
+    //helper method
     private void verifyOwner(Workspace workspace, UUID requesterId) {
         if (!workspace.getOwner().getId().equals(requesterId)) {
             throw new AccessDeniedException("Only the workspace owner can perform this action");

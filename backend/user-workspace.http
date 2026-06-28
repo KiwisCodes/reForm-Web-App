@@ -1,9 +1,8 @@
 ### =========================================================================
-### 1. MULTI-USER REGISTRATION (Setup Your Users)
+### 1. MULTI-USER REGISTRATION (Run once to populate DB)
 ### =========================================================================
 
 # @name RegisterOwner
-# Register User 1: Alex (The Workspace Owner)
 POST http://localhost:8080/api/v1/users/register
 Content-Type: application/json
 
@@ -16,7 +15,6 @@ Content-Type: application/json
 ###
 
 # @name RegisterMember1
-# Register User 2: Bob (Collaborator 1)
 POST http://localhost:8080/api/v1/users/register
 Content-Type: application/json
 
@@ -29,7 +27,6 @@ Content-Type: application/json
 ###
 
 # @name RegisterMember2
-# Register User 3: Charlie (Collaborator 2)
 POST http://localhost:8080/api/v1/users/register
 Content-Type: application/json
 
@@ -39,20 +36,64 @@ Content-Type: application/json
   "username": "Charlie Collaborator"
 }
 
-### =========================================================================
-### 2. THE CORE ID VARIABLES (Copy-paste your generated IDs below)
-### =========================================================================
-@alexId = 3d9efb3c-13c8-4a32-973b-f7687daf64a9
-@workspaceId = 06ad5351-ce08-4a61-afe7-476e351c8de1
 
 ### =========================================================================
-### 3. WORKSPACE CORE FLOW
+### 2. AUTHENTICATION (Login to capture JWT Tokens)
 ### =========================================================================
 
-# A. Create Workspace (Owned by Alex)
-# Note: On registration, Alex's workspace is auto-created.
-# Use this POST if you want to manually create an extra one.
-POST http://localhost:8080/api/v1/workspaces/{{alexId}}
+# @name LoginAlex
+POST http://localhost:8080/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "username": "alex@reform.app",
+  "password": "securepassword123"
+}
+
+> {% client.global.set("alexToken", response.body.accessToken); %}
+
+###
+
+# @name LoginBob
+POST http://localhost:8080/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "username": "bob@reform.app",
+  "password": "securepassword123"
+}
+
+> {% client.global.set("bobToken", response.body.accessToken); %}
+
+###
+
+# @name LoginCharlie
+POST http://localhost:8080/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "username": "charlie@reform.app",
+  "password": "securepassword123"
+}
+
+> {% client.global.set("charlieToken", response.body.accessToken); %}
+
+
+### =========================================================================
+### 3. GLOBAL WORKSPACE ID VARIABLE
+### =========================================================================
+# Run 'Create Workspace' first, copy the workspace ID from the response, and paste it here:
+@workspaceId = b9636a56-2079-441a-bc2e-0f3dece9c06d
+
+
+### =========================================================================
+### 4. WORKSPACE CORE FLOW
+### =========================================================================
+
+# A. Create Workspace (Authenticated as Alex)
+# @name CreateWorkspace
+POST http://localhost:8080/api/v1/workspaces
+Authorization: Bearer {{alexToken}}
 Content-Type: application/json
 
 {
@@ -62,13 +103,15 @@ Content-Type: application/json
 
 ###
 
-# B. Get Workspace Details (Using 'requesterId' query parameter to prove ownership!)
-GET http://localhost:8080/api/v1/workspaces/{{workspaceId}}?requesterId={{alexId}}
+# B. Get Workspace Details (Alex reads her own workspace)
+GET http://localhost:8080/api/v1/workspaces/{{workspaceId}}
+Authorization: Bearer {{alexToken}}
 
 ###
 
-# C. Update Workspace Metadata (PATCH - Validated by requesterId)
-PATCH http://localhost:8080/api/v1/workspaces/{{workspaceId}}?requesterId={{alexId}}
+# C. Update Workspace Metadata (Alex updates properties)
+PATCH http://localhost:8080/api/v1/workspaces/{{workspaceId}}
+Authorization: Bearer {{alexToken}}
 Content-Type: application/json
 
 {
@@ -76,13 +119,14 @@ Content-Type: application/json
   "description": "Enterprise-grade multi-tenant workspace"
 }
 
+
 ### =========================================================================
-### 4. TEAM MEMBERSHIP COLLABORATION FLOW
+### 5. TEAM MEMBERSHIP COLLABORATION FLOW
 ### =========================================================================
 
-# D. Bulk-Add Members (Invite Bob and Charlie by their emails)
-# Secure: Requires Alex's ID in the query param to allow the write!
-POST http://localhost:8080/api/v1/workspaces/{{workspaceId}}/members?requesterId={{alexId}}
+# D. Bulk-Add Members (Alex invites Bob and Charlie by email)
+POST http://localhost:8080/api/v1/workspaces/{{workspaceId}}/members
+Authorization: Bearer {{alexToken}}
 Content-Type: application/json
 
 {
@@ -94,14 +138,15 @@ Content-Type: application/json
 
 ###
 
-# E. Get Workspace Details (Verify Bob & Charlie are successfully inside the members list!)
-GET http://localhost:8080/api/v1/workspaces/{{workspaceId}}?requesterId={{alexId}}
+# E. Verify Access (Bob can now read the workspace because he is a member)
+GET http://localhost:8080/api/v1/workspaces/{{workspaceId}}
+Authorization: Bearer {{bobToken}}
 
 ###
 
-# F. Bulk-Remove Members (Kick Bob, leaving only Charlie)
-# Secure: Requires Alex's ID in the query param to allow the delete!
-DELETE http://localhost:8080/api/v1/workspaces/{{workspaceId}}/members?requesterId={{alexId}}
+# F. Bulk-Remove Members (Alex kicks Bob out)
+DELETE http://localhost:8080/api/v1/workspaces/{{workspaceId}}/members
+Authorization: Bearer {{alexToken}}
 Content-Type: application/json
 
 {
@@ -112,5 +157,6 @@ Content-Type: application/json
 
 ###
 
-# G. Final Verification (Verify Bob is gone, only Charlie remains)
-GET http://localhost:8080/api/v1/workspaces/{{workspaceId}}?requesterId={{alexId}}
+# G. Final Security Verification (Bob tries to read but should get a 403 Forbidden now)
+GET http://localhost:8080/api/v1/workspaces/{{workspaceId}}
+Authorization: Bearer {{bobToken}}

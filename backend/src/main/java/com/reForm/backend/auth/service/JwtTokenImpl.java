@@ -23,10 +23,10 @@ and infrastructure components (like token providers, converters, or file storage
 @Slf4j
 public class JwtTokenImpl implements ITokenProvider {
 //    @Value("${app.security.secret}")
-    private String jwtSecret;
+    private final String jwtSecret;
 
 //    @Value("${app.security.expiration-ms}")
-    private Long expirationMs;
+    private final Long expirationMs;
 
     public JwtTokenImpl(@Value("${app.security.secret}") String jwtSecret,
                         @Value("${app.security.expiration-ms}") Long expirationMs) {

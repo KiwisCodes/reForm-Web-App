@@ -37,8 +37,11 @@ public class Workspace extends BaseEntity {
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "workspace_members",
-            joinColumns = @JoinColumn(name="workspace_id"),
-            inverseJoinColumns = @JoinColumn(name="member_id")
+            joinColumns = @JoinColumn(name = "workspace_id"),
+            inverseJoinColumns = @JoinColumn(name = "member_id"), // <-- Added the missing comma here
+            indexes = {
+                    @Index(name = "idx_workspace_member", columnList = "workspace_id, member_id")
+            }
     )
     @Builder.Default
     private Set<User> members = new HashSet<>();

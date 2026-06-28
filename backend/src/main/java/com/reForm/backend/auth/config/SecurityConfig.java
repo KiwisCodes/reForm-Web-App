@@ -6,6 +6,7 @@ import com.reForm.backend.auth.exception.CustomAuthenticationEntryPoint;
 import com.reForm.backend.auth.exception.CustomAccessDeniedHandler;
 
 // Lombok annotation that auto-generates a constructor for any fields marked 'final'
+import com.reForm.backend.auth.port.ITokenProvider;
 import lombok.RequiredArgsConstructor;
 
 // Core Spring framework configuration annotations
@@ -15,10 +16,12 @@ import org.springframework.context.annotation.Configuration;
 // Spring Security management dependencies
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
@@ -36,20 +39,64 @@ import java.util.List;
 @Configuration // Specifies that this class contains factory methods (@Bean) to initialize core infrastructure setups.
 @EnableWebSecurity // Instructs Spring to bypass its default basic security setup and execute this custom pipeline instead.
 @RequiredArgsConstructor // Automatically hooks up Dependency Injection for all final variables during startup.
+@EnableMethodSecurity // A BUG WITHOUT THIS, WHAT IS IT THOUGH
+/*
+Bug 2 : Missing Method Security Enablement (The Silent Bypass)
+The Problem:
+Once you fix Bug 1 , your authentication will succeed.
+However, your @PreAuthorize guards on your WorkspaceController (e.g., @PreAuthorize("@workspaceSecurity.isMember(...)"))
+will not execute. Anyone who is logged in can query or delete any workspace UUID because the security check is bypassed.
+Why It Happens:
+Spring Security does not scan controllers for @PreAuthorize annotations out of the box.
+You must explicitly configure Spring to wrap your controllers in security proxy aspects.
+How to Fix It:
+Add @EnableMethodSecurity to your main SecurityConfig.java class:
+ */
 public class SecurityConfig {
 
-    // 1. Injected custom JWT bouncer filter. It reads incoming headers, finds tokens, and authenticates requests.
-    private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    // FIX (Bug 1 - Double Registration):
+    // We no longer inject JwtAuthenticationFilter as a constructor field.
+    // If we did, Spring would try to find/build the 'jwtAuthenticationFilter' bean to inject here,
+    // but that bean is defined by the @Bean method below — which lives inside THIS class.
+    // Spring can't finish building SecurityConfig without the filter, and can't build the filter
+    // without finishing SecurityConfig first. Deadlock / circular reference.
+    //
+    // Instead, we inject only the RAW DEPENDENCIES the filter needs (ITokenProvider + UserDetailsService),
+    // and we construct the filter ourselves inside the @Bean method below.
+    // This way SecurityConfig has no dependency on its own output bean.
 
-    // 2. Injected custom HTTP 401 error translator (Triggers when NO token or an EXPIRED token is supplied).
+    // 1. Raw dependency needed to construct JwtAuthenticationFilter
+    private final ITokenProvider tokenProvider;
+
+    // 2. Raw dependency needed to construct JwtAuthenticationFilter
+    private final UserDetailsService userDetailsService;
+
+    // 3. Injected custom HTTP 401 error translator (Triggers when NO token or an EXPIRED token is supplied).
     private final CustomAuthenticationEntryPoint customAuthenticationEntryPoint;
 
-    // 3. Injected custom HTTP 403 error translator (Triggers when logged-in users try to access unauthorized roles).
+    // 4. Injected custom HTTP 403 error translator (Triggers when logged-in users try to access unauthorized roles).
     private final CustomAccessDeniedHandler customAccessDeniedHandler;
+
+    // FIX (Bug 1 - Double Registration):
+    // We manually declare the filter as a @Bean here instead of annotating JwtAuthenticationFilter with @Component.
+    // @Component would cause Tomcat to auto-register it as a global Servlet filter AND Spring Security would
+    // also register it via .addFilterBefore(...) below — running it twice, with SecurityContextHolderFilter
+    // wiping the authentication in between, causing 401s on every protected request.
+    //
+    // By declaring it here as a @Bean with no @Component on the class itself, it only exists inside the
+    // Spring Security filter chain — exactly where we want it.
+    //
+    // IMPORTANT: When securityFilterChain() calls jwtAuthenticationFilter() below, Spring intercepts that
+    // method call and returns the already-created singleton bean — it does NOT construct a second instance.
+    // This is a special behaviour of @Bean methods inside @Configuration classes.
+    @Bean
+    public JwtAuthenticationFilter jwtAuthenticationFilter() {
+        return new JwtAuthenticationFilter(tokenProvider, userDetailsService);
+    }
 
     /**
      * Configures the step-by-step pipeline (Filter Chain) that every single network request passes through.
-     * It tells which filter are active or disable
+     * It tells which filter are active or disabled.
      */
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -80,13 +127,14 @@ public class SecurityConfig {
                 // Registers our custom handlers to catch lifecycle runtime security crashes and format them cleanly.
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(customAuthenticationEntryPoint) // Handles 401 Unauthorized errors
-                        .accessDeniedHandler(customAccessDeniedHandler)          // Handles 403 Forbidden errors
+                        .accessDeniedHandler(customAccessDeniedHandler)           // Handles 403 Forbidden errors
                 )
 
                 // 6. Mount our custom JWT filter before Spring's native Authentication filters
                 // Intercepts the request right before UsernamePasswordAuthenticationFilter runs.
                 // This extracts the JWT token from the headers and tells Spring who the user is before security rules are evaluated.
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                // We call jwtAuthenticationFilter() as a method here — Spring returns the singleton @Bean, not a new instance.
+                .addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

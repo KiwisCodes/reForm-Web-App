@@ -11,13 +11,13 @@ public interface IWorkspaceService {
 
     WorkspaceResponseDto createWorkspace(UUID requesterId, WorkspaceCreateRequestDto dto);
 
-    WorkspaceResponseDto updateWorkspace(UUID requesterId, UUID workspaceId, WorkspaceUpdateRequestDto dto);
+    WorkspaceResponseDto updateWorkspace(UUID workspaceId, WorkspaceUpdateRequestDto dto);
 
-    void deleteWorkspace(UUID requesterId, UUID workspaceId);
+    void deleteWorkspace(UUID workspaceId);
 
-    WorkspaceResponseDto getWorkspace(UUID requesterId, UUID workspaceId);
+    WorkspaceResponseDto getWorkspace(UUID workspaceId);
 
-    WorkspaceResponseDto addMembers(UUID requesterId, UUID workspaceId, WorkspaceAddMemberRequestDto dto);
+    WorkspaceResponseDto addMembers(UUID workspaceId, WorkspaceAddMemberRequestDto dto);
 
-    WorkspaceResponseDto deleteMembers(UUID requesterId, UUID workspaceId, WorkspaceDeleteMemberRequestDto dto);
+    WorkspaceResponseDto deleteMembers(UUID workspaceId, WorkspaceDeleteMemberRequestDto dto);
 }

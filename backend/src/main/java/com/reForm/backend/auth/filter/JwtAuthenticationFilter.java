@@ -24,7 +24,7 @@ import java.io.IOException;
  * Executes exactly once per execution thread to maintain high performance.
  */
 @Slf4j
-@Component
+@Component //something is wrong with this
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
@@ -77,3 +77,27 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         return null;
     }
 }
+
+/*
+Why It Happens (The Execution Race Condition):
+Double Registration: Your JwtAuthenticationFilter is annotated with @Component,
+which instructs Spring Boot to automatically register it as a global Servlet Filter with the Tomcat container.
+It is also manually registered inside your Spring Security filter chain in SecurityConfig.java using
+.addFilterBefore(..., UsernamePasswordAuthenticationFilter.class).
+
+The First Execution (Outside Spring Security): When your HTTP request arrives,
+Tomcat runs the global Servlet Filters first.
+Your JwtAuthenticationFilter executes, successfully validates the Bearer token,
+extracts the email, fetches the user, and populates the SecurityContextHolder.
+It then marks the request as "already filtered" (a native protection built into OncePerRequestFilter).
+
+The Wipeout: The request is then handed off to the Spring Security Filter Chain.
+The very first security filter to run is SecurityContextHolderFilter.
+This filter is stateless: it checks if there is a session-persisted security context.
+Seeing none, it wipes out the active ThreadLocal context, replacing it with an empty context.
+The Skip: Eventually, the request progresses through the Spring Security Filter Chain and reaches your
+custom JwtAuthenticationFilter slot. Your filter inspects the request, detects the "already filtered"
+flag set during Step 2, and skips execution entirely.
+The Rejection: The request arrives at AuthorizationFilter with an empty context,
+is treated as anonymous, and triggers your CustomAuthenticationEntryPoint with a 401 Unauthorized.
+ */

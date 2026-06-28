@@ -1,9 +1,13 @@
 spring:
   jackson:
-    # Changes camelCase Java variables to snake_case in your JSON responses globally
-    property-naming-strategy: SNAKE_CASE
-    # Prevents dates from being written as ugly computer timestamps (e.g., [2026,6,25])
+    # Forces Jackson to serialize Java camelCase field names (e.g., accessToken) to camelCase in JSON responses.
+    # Jackson 3 (Spring Boot 4+) changed the default to snake_case (access_token), which broke our .http scripts
+    # and would break our frontend too. This restores the conventional camelCase behaviour explicitly.
+    property-naming-strategy: LOWER_CAMEL_CASE
 #    serialization:
+      # Prevents Java date/time types (LocalDateTime, etc.) from being serialized as ugly array timestamps
+      # e.g., without this: [2026, 6, 25, 10, 30] — with this: "2026-06-25T10:30:00"
+#      write-dates-as-timestamps: false
 
   datasource:
     # Changed 5332 to 5432 to match your new docker-compose.yml!
@@ -30,5 +34,5 @@ app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
   security:
-      secret: ${JWT_SECRET_KEY}
-      expiration-ms: ${EXPIRATION_DURATION:3600000}
+    secret: ${JWT_SECRET_KEY}
+    expiration-ms: ${EXPIRATION_DURATION:3600000}

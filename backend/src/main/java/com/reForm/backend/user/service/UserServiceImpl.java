@@ -23,7 +23,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class UserServiceImpl implements IUserService {
     private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
+    private final PasswordEncoder passwordEncoder; //Bean
     private final UserMapper userMapper;
     private final IWorkspaceService workspaceService;
 
