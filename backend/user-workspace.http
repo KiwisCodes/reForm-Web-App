@@ -1,0 +1,162 @@
+### =========================================================================
+### 1. MULTI-USER REGISTRATION (Run once to populate DB)
+### =========================================================================
+
+# @name RegisterOwner
+POST http://localhost:8080/api/v1/users/register
+Content-Type: application/json
+
+{
+  "email": "alex@reform.app",
+  "password": "securepassword123",
+  "username": "Alex Owner"
+}
+
+###
+
+# @name RegisterMember1
+POST http://localhost:8080/api/v1/users/register
+Content-Type: application/json
+
+{
+  "email": "bob@reform.app",
+  "password": "securepassword123",
+  "username": "Bob Collaborator"
+}
+
+###
+
+# @name RegisterMember2
+POST http://localhost:8080/api/v1/users/register
+Content-Type: application/json
+
+{
+  "email": "charlie@reform.app",
+  "password": "securepassword123",
+  "username": "Charlie Collaborator"
+}
+
+
+### =========================================================================
+### 2. AUTHENTICATION (Login to capture JWT Tokens)
+### =========================================================================
+
+# @name LoginAlex
+POST http://localhost:8080/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "username": "alex@reform.app",
+  "password": "securepassword123"
+}
+
+> {% client.global.set("alexToken", response.body.accessToken); %}
+
+###
+
+# @name LoginBob
+POST http://localhost:8080/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "username": "bob@reform.app",
+  "password": "securepassword123"
+}
+
+> {% client.global.set("bobToken", response.body.accessToken); %}
+
+###
+
+# @name LoginCharlie
+POST http://localhost:8080/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "username": "charlie@reform.app",
+  "password": "securepassword123"
+}
+
+> {% client.global.set("charlieToken", response.body.accessToken); %}
+
+
+### =========================================================================
+### 3. GLOBAL WORKSPACE ID VARIABLE
+### =========================================================================
+# Run 'Create Workspace' first, copy the workspace ID from the response, and paste it here:
+@workspaceId = b9636a56-2079-441a-bc2e-0f3dece9c06d
+
+
+### =========================================================================
+### 4. WORKSPACE CORE FLOW
+### =========================================================================
+
+# A. Create Workspace (Authenticated as Alex)
+# @name CreateWorkspace
+POST http://localhost:8080/api/v1/workspaces
+Authorization: Bearer {{alexToken}}
+Content-Type: application/json
+
+{
+  "name": "Alex Tech Team",
+  "description": "Collaborative workspace for platform engineers"
+}
+
+###
+
+# B. Get Workspace Details (Alex reads her own workspace)
+GET http://localhost:8080/api/v1/workspaces/{{workspaceId}}
+Authorization: Bearer {{alexToken}}
+
+###
+
+# C. Update Workspace Metadata (Alex updates properties)
+PATCH http://localhost:8080/api/v1/workspaces/{{workspaceId}}
+Authorization: Bearer {{alexToken}}
+Content-Type: application/json
+
+{
+  "name": "Reform Core Platform Team",
+  "description": "Enterprise-grade multi-tenant workspace"
+}
+
+
+### =========================================================================
+### 5. TEAM MEMBERSHIP COLLABORATION FLOW
+### =========================================================================
+
+# D. Bulk-Add Members (Alex invites Bob and Charlie by email)
+POST http://localhost:8080/api/v1/workspaces/{{workspaceId}}/members
+Authorization: Bearer {{alexToken}}
+Content-Type: application/json
+
+{
+  "emails": [
+    "bob@reform.app",
+    "charlie@reform.app"
+  ]
+}
+
+###
+
+# E. Verify Access (Bob can now read the workspace because he is a member)
+GET http://localhost:8080/api/v1/workspaces/{{workspaceId}}
+Authorization: Bearer {{bobToken}}
+
+###
+
+# F. Bulk-Remove Members (Alex kicks Bob out)
+DELETE http://localhost:8080/api/v1/workspaces/{{workspaceId}}/members
+Authorization: Bearer {{alexToken}}
+Content-Type: application/json
+
+{
+  "emails": [
+    "bob@reform.app"
+  ]
+}
+
+###
+
+# G. Final Security Verification (Bob tries to read but should get a 403 Forbidden now)
+GET http://localhost:8080/api/v1/workspaces/{{workspaceId}}
+Authorization: Bearer {{bobToken}}

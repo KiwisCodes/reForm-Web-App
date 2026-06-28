@@ -19,20 +19,35 @@ import java.util.Set;
 public class Workspace extends BaseEntity {
 
     @Column(nullable = false)
-    private String workspaceName;
+    private String name;
 
-    @Column(nullable = true)
-    private String workspaceDescription;
+
+    private String description; 
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(nullable = false, name = "owner_id")
     private User owner;
+    //select * from workspace where ws id is true
 
+    //WORkspace workspace_id owner_id fk
+    //User uuid workspace_id fk
+
+
+//    this is the many to many, but now we want: one user only have 1 workspace, and can be invited to many workspaces
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "workspace_members",
-            joinColumns = @JoinColumn(name="workspace_id"),
-            inverseJoinColumns = @JoinColumn(name="user_id")
+            joinColumns = @JoinColumn(name = "workspace_id"),
+            inverseJoinColumns = @JoinColumn(name = "member_id"), // <-- Added the missing comma here
+            indexes = {
+                    @Index(name = "idx_workspace_member", columnList = "workspace_id, member_id")
+            }
     )
-    private Set<User> users = new HashSet<>();
+    @Builder.Default
+    private Set<User> members = new HashSet<>();
+    //if you dont have builder.default, when you make new workspace, the builder point to null
+
+
+//    @OneToMany(fetch = FetchType.LAZY)
+//    private Set<User> members = new HashSet<>();
 }

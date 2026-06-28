@@ -1,6 +1,5 @@
 package com.reForm.backend.user.port;
 
-import com.reForm.backend.user.dto.UserLoginRequestDto;
 import com.reForm.backend.user.dto.UserRegisterRequestDto;
 import com.reForm.backend.user.dto.UserResponseDto;
 import com.reForm.backend.user.dto.UserUpdateRequestDto;
