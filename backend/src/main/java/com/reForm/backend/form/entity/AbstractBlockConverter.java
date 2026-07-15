@@ -1,7 +1,7 @@
 package com.reForm.backend.form.entity;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 import com.reForm.backend.form.entity.block.AbstractBlock;
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
@@ -14,7 +14,7 @@ public class AbstractBlockConverter implements AttributeConverter<List<AbstractB
     public String convertToDatabaseColumn(List<AbstractBlock> attribute) {
         try {
             return objectMapper.writeValueAsString(attribute);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new RuntimeException("Error writing blocks to JSON string", e);
         }
     }
@@ -26,7 +26,7 @@ public class AbstractBlockConverter implements AttributeConverter<List<AbstractB
                 return new ArrayList<>();
             }
             return objectMapper.readValue(dbData, new TypeReference<List<AbstractBlock>>() {});
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new RuntimeException("Error reading blocks from JSON string", e);
         }
     }
