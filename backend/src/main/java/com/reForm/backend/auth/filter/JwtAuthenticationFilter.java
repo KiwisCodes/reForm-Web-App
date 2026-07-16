@@ -24,7 +24,7 @@ import java.io.IOException;
  * Executes exactly once per execution thread to maintain high performance.
  */
 @Slf4j
-@Component //something is wrong with this
+//@Component //something is wrong with this
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
