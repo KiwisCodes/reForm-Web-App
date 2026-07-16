@@ -36,3 +36,22 @@ app:
   security:
     secret: ${JWT_SECRET_KEY}
     expiration-ms: ${EXPIRATION_DURATION:3600000}
+  rate-limiting:
+    limits:
+      ANONYMOUS:
+        capacity: 10
+        refill-tokens: 2
+        refill-seconds: 10
+      FORM_FILLER:
+        capacity: 30
+        refill-tokens: 5
+        refill-seconds: 10
+      FORM_BUILDER:
+        capacity: 60
+        refill-tokens: 10
+        refill-seconds: 10
+      ADMIN:
+        capacity: 120
+        refill-tokens: 20
+        refill-seconds: 10
+
