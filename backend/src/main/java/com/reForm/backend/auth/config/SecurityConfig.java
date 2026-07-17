@@ -115,6 +115,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/**").permitAll()                // Open login and authentication paths (No token needed)
                         .requestMatchers("/api/v1/users/register").permitAll()          // Open user registration path (No token needed)
+                        .requestMatchers("/api/v1/submissions/**").permitAll()
+                        .requestMatchers("/api/v1/f/**").permitAll()
+                        .requestMatchers("/error").permitAll()                        // necessary for form and submission module
                         .anyRequest().authenticated()                                   // Secure all other endpoints (A valid JWT MUST be provided)
                 )
 

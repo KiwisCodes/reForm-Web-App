@@ -22,7 +22,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/workspaces")
 @Validated
-public class WorkspaceController {
+public class    WorkspaceController {
     private final IWorkspaceService workspaceService;
 
     @GetMapping("/{workspaceId}")

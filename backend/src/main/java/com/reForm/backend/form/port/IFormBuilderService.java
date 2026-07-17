@@ -11,7 +11,7 @@ import java.util.UUID;
 
 public interface IFormBuilderService {
 
-    public FormResponseDto createForm(FormCreateDto request);
+    public FormResponseDto createForm(FormCreateDto request, UUID creatorId);
 
     public List<FormResponseDto> getAllFormInWorkspace(UUID workspaceId);
 
@@ -21,4 +21,5 @@ public interface IFormBuilderService {
 
     public String delete(UUID id, UUID workspaceId);
 
+    FormResponseDto publishForm(UUID formId, UUID workspaceId);
 }

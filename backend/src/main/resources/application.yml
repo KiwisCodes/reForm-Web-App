@@ -10,10 +10,10 @@ spring:
 #      write-dates-as-timestamps: false
 
   datasource:
-    # Changed 5332 to 5432 to match your new docker-compose.yml!
-    url: jdbc:postgresql://localhost:5432/${POSTGRES_DB}
-    username: ${POSTGRES_USER}
-    password: ${POSTGRES_PASSWORD}
+    # 5433 (not the Postgres default 5432) because a native Windows PostgreSQL service already owns port 5432 on this machine.
+    url: jdbc:postgresql://localhost:5433/${POSTGRES_DB:reform_db}
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:password}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
@@ -22,6 +22,8 @@ spring:
     properties:
       hibernate:
         format_sql: true
+        type:
+          json_format_mapper: org.hibernate.type.format.jackson.Jackson3JsonFormatMapper
   data:
     redis:
       host: localhost

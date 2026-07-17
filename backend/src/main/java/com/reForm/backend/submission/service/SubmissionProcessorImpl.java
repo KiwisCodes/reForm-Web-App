@@ -1,13 +1,11 @@
 package com.reForm.backend.submission.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.reForm.backend.form.entity.Form;
+import tools.jackson.databind.JsonNode;
+import com.reForm.backend.core.exception.ResourceNotAccessedException;
+import com.reForm.backend.form.dto.BlockValidationRule;
+import com.reForm.backend.form.dto.FormSubmissionDto;
 import com.reForm.backend.form.entity.FormStatus;
-import com.reForm.backend.form.entity.block.AbstractBlock;
-import com.reForm.backend.form.mapper.FormMapper;
-import com.reForm.backend.form.port.IFormBuilderService;
-import com.reForm.backend.form.repository.FormRepository;
-import com.reForm.backend.form.service.FormBuilderServiceImpl;
+import com.reForm.backend.form.port.IFormQueryPort;
 import com.reForm.backend.submission.dto.SubmissionResponseDto;
 import com.reForm.backend.submission.entity.Submission;
 import com.reForm.backend.submission.mapper.SubmissionMapper;
@@ -25,30 +23,31 @@ public class SubmissionProcessorImpl implements ISubmissionProcessor {
 
     private final SubmissionRepository repository;
 
-    private final FormRepository formRepository;
+    private final IFormQueryPort queryService;
 
     private final SubmissionMapper mapper;
 
-    // Fix logic
+    // Applying DDD rules here
     @Transactional
     @Override
-    public SubmissionResponseDto saveSubmission(UUID formId, JsonNode answers, String ipAddress, String userAgent) {
-        Form form = formRepository.findById(formId).orElseThrow(() -> new RuntimeException(formId + "not found!"));
-        if (form.getStatus() == FormStatus.DRAFT){
-            throw new RuntimeException("The form is not published.");
+    public SubmissionResponseDto saveSubmission(UUID formId, JsonNode answers, String userAgent) {
+        FormSubmissionDto form = queryService.fetchForm(formId);
+        if (form.status() == FormStatus.DRAFT){
+            throw new ResourceNotAccessedException("The form is not published.");
         }
 
-        // Move to frontend
-        for (AbstractBlock block : form.getBlocks()){
-            String key = block.getId().toString();
-            if (block.isRequired()){
-                if (answers.get(key) == null) throw new RuntimeException("Field cannot be empty");
+        for (BlockValidationRule rule : form.rules()){
+            String key = rule.id().toString();
+            if (rule.isRequired()){
+                if (answers.path(key).asString().isBlank()) throw new ResourceNotAccessedException("Field cannot be empty");
             }
         }
+
+
         Submission submission = new Submission();
-        submission.setForm(form);
+        submission.setFormId(formId);
         submission.setAnswers(answers);
-        submission.setSubmitterIp(ipAddress);
+//      submission.setSubmitterIp(ipAddress);
         submission.setUserAgent(userAgent);
         return mapper.toResponseDto(repository.save(submission));
     }

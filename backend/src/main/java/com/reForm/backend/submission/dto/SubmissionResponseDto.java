@@ -4,6 +4,6 @@ import java.util.UUID;
 
 public record SubmissionResponseDto(
         String message,
-        UUID submissionId
+        UUID id
 ) {
 }

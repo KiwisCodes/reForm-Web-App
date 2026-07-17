@@ -4,6 +4,8 @@ import com.reForm.backend.core.domain.BaseEntity;
 import com.reForm.backend.form.entity.block.AbstractBlock;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -25,12 +27,16 @@ public class Form extends BaseEntity {
     private String title;
 
     @Convert(converter = AbstractBlockConverter.class)
-
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
     private List<AbstractBlock> blocks = new ArrayList<>();
 
     private UUID workspaceId;
 
     private String slug;
+
+    @Column(updatable = false)
+    private UUID creatorId;
 
     @Enumerated(EnumType.STRING)
     private FormStatus status;

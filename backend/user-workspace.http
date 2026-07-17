@@ -83,7 +83,7 @@ Content-Type: application/json
 ### 3. GLOBAL WORKSPACE ID VARIABLE
 ### =========================================================================
 # Run 'Create Workspace' first, copy the workspace ID from the response, and paste it here:
-@workspaceId = b9636a56-2079-441a-bc2e-0f3dece9c06d
+@workspaceId = 7cc48435-ea12-4f4b-aa1b-c99426c75637
 
 
 ### =========================================================================
@@ -160,3 +160,222 @@ Content-Type: application/json
 # G. Final Security Verification (Bob tries to read but should get a 403 Forbidden now)
 GET http://localhost:8080/api/v1/workspaces/{{workspaceId}}
 Authorization: Bearer {{bobToken}}
+
+
+### =========================================================================
+### 6. FORM BUILDER: CREATE FORM
+### =========================================================================
+# Note: BuilderController's createForm mapping is @PostMapping(params = "title"),
+# which means the "title" QUERY PARAM below is required just to route the request
+# (separate from the "title" field in the JSON body).
+# @PreAuthorize("@workspaceSecurity.isMember(authentication, #workspaceId)") checks the
+# X-Workspace-Id HEADER; the service persists Form.workspaceId from the JSON BODY.
+# Both must match the workspace you're actually a member of, so both are set to {{workspaceId}}.
+
+# @name CreateForm
+POST http://localhost:8080/api/v1/form?title=Customer%20Feedback
+Authorization: Bearer {{alexToken}}
+X-Workspace-Id: {{workspaceId}}
+Content-Type: application/json
+
+{
+  "title": "Customer Feedback",
+  "workspaceId": "{{workspaceId}}",
+  "blocks": [
+    {
+      "type": "STATIC",
+      "staticType": "SHORT_TEXT",
+      "label": "What is your name?",
+      "description": "Please enter your full name",
+      "required": true,
+      "sortOrder": 1,
+      "placeholder": "e.g. Jane Doe",
+      "maxChar": 50
+    }
+  ]
+}
+
+> {% client.global.set("formId", response.body.id); %}
+
+
+### =========================================================================
+### 7. FORM BUILDER: READ, UPDATE, DELETE
+### =========================================================================
+
+# H. Get Single Form (requires the workspace-scoped X-Workspace-Id header)
+# @name GetForm
+GET http://localhost:8080/api/v1/form/{{formId}}
+Authorization: Bearer {{alexToken}}
+X-Workspace-Id: {{workspaceId}}
+
+###
+
+# I. Get All Forms In Workspace
+# @name GetAllForms
+GET http://localhost:8080/api/v1/form
+Authorization: Bearer {{alexToken}}
+X-Workspace-Id: {{workspaceId}}
+
+###
+
+# J. Update Form Blocks (PUT /{id}/blocks — replaces the full blocks list)
+# @name UpdateFormBlocks
+PUT http://localhost:8080/api/v1/form/{{formId}}/blocks
+Authorization: Bearer {{alexToken}}
+X-Workspace-Id: {{workspaceId}}
+Content-Type: application/json
+
+{
+  "id": "{{formId}}",
+  "workspaceId": "{{workspaceId}}",
+  "blocks": [
+    {
+      "type": "STATIC",
+      "staticType": "SHORT_TEXT",
+      "label": "What is your full name?",
+      "description": "Please enter your full name",
+      "required": true,
+      "sortOrder": 1,
+      "placeholder": "e.g. Jane Doe",
+      "maxChar": 50
+    },
+    {
+      "type": "STATIC",
+      "staticType": "EMAIL",
+      "label": "What is your email?",
+      "description": "We'll use this to follow up",
+      "required": true,
+      "sortOrder": 2,
+      "placeholder": "e.g. jane@example.com"
+    }
+  ]
+}
+
+> {% client.global.set("formSlug", response.body.slug);
+     client.global.set("block1Id", response.body.blocks[0].id);
+     client.global.set("block2Id", response.body.blocks[1].id); %}
+
+###
+
+# K. Delete Form (expect 204 No Content)
+# @name DeleteForm
+DELETE http://localhost:8080/api/v1/form/{{formId}}
+Authorization: Bearer {{bobToken}}
+X-Workspace-Id: {{workspaceId}}
+
+
+### =========================================================================
+### 8. SUBMISSION MODULE
+### =========================================================================
+# /api/v1/f/** and /api/v1/submissions/** are anonymous by design (SecurityConfig
+# permitAll's both) — no Authorization header on the truly public requests below,
+# to actually prove that.
+
+# L. Publish Form (Alex is the creator — required before any submission can succeed)
+# @name PublishForm
+PATCH http://localhost:8080/api/v1/form/{{formId}}/publish
+Authorization: Bearer {{alexToken}}
+X-Workspace-Id: {{workspaceId}}
+
+###
+
+# M. Publish Attempt By Non-Creator (Charlie is a member but didn't create this form — expect 403 Forbidden)
+# @name PublishFormForbidden
+PATCH http://localhost:8080/api/v1/form/{{formId}}/publish
+Authorization: Bearer {{charlieToken}}
+X-Workspace-Id: {{workspaceId}}
+
+###
+
+# N. Public Get Form Definition — anonymous request, no token (expect 200)
+# @name GetPublicForm
+GET http://localhost:8080/api/v1/f/{{formSlug}}
+
+###
+
+# O. Successful Submission — anonymous request, both required blocks filled (expect 200, {message, id})
+# @name SubmitFormSuccess
+POST http://localhost:8080/api/v1/submissions/{{formSlug}}
+Content-Type: application/json
+
+{
+  "{{block1Id}}": "Jane Doe",
+  "{{block2Id}}": "jane@example.com"
+}
+
+###
+
+# P. Required Field Blank — block1 present but empty string (expect 400, "Field cannot be empty")
+# @name SubmitFormBlankRequiredField
+POST http://localhost:8080/api/v1/submissions/{{formSlug}}
+Content-Type: application/json
+
+{
+  "{{block1Id}}": "",
+  "{{block2Id}}": "jane@example.com"
+}
+
+###
+
+# Q. Required Field Omitted Entirely — block1 key missing from the JSON, not just blank
+# (expect 400, same "Field cannot be empty" message as P — answers.path(key) treats
+# a missing key and a blank value identically)
+# @name SubmitFormMissingRequiredKey
+POST http://localhost:8080/api/v1/submissions/{{formSlug}}
+Content-Type: application/json
+
+{
+  "{{block2Id}}": "jane@example.com"
+}
+
+###
+
+# R. Submission To Nonexistent Slug (expect 404, "Form does not exist")
+# @name SubmitFormBadSlug
+POST http://localhost:8080/api/v1/submissions/this-slug-does-not-exist-000000
+Content-Type: application/json
+
+{
+  "{{block1Id}}": "Jane Doe"
+}
+
+###
+
+# S. Create A Second Form, Deliberately Never Published (fixture for tests T & U below)
+# @name CreateDraftOnlyForm
+POST http://localhost:8080/api/v1/form?title=Draft%20Only
+Authorization: Bearer {{alexToken}}
+X-Workspace-Id: {{workspaceId}}
+Content-Type: application/json
+
+{
+  "title": "Draft Only",
+  "workspaceId": "{{workspaceId}}",
+  "blocks": [
+    {
+      "type": "STATIC",
+      "staticType": "SHORT_TEXT",
+      "label": "Anything?",
+      "required": false,
+      "sortOrder": 1
+    }
+  ]
+}
+
+> {% client.global.set("draftFormSlug", response.body.slug); %}
+
+###
+
+# T. Public Get A Still-DRAFT Form's Definition (expect 400, "Form is not published!")
+# @name GetPublicDraftForm
+GET http://localhost:8080/api/v1/f/{{draftFormSlug}}
+
+###
+
+# U. Submission To A Still-DRAFT Form (expect 400, "The form is not published.")
+# @name SubmitFormStillDraft
+POST http://localhost:8080/api/v1/submissions/{{draftFormSlug}}
+Content-Type: application/json
+
+{}
+

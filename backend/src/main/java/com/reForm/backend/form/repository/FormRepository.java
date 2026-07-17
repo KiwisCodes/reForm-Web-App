@@ -9,7 +9,9 @@ import java.util.UUID;
 
 public interface FormRepository extends JpaRepository<Form, UUID> {
 
-    List<Form> findByWorkspaceIdOrderByCreatedDateDesc(UUID workspaceId);
+    List<Form> findByWorkspaceIdOrderByCreatedAtDesc(UUID workspaceId);
     Optional<Form> findByIdAndWorkspaceId(UUID id, UUID workspaceId);
     Optional<Form> findBySlug(String slug);
+    Boolean existsByCreatorIdAndId(UUID creatorId, UUID formId);
+    Optional<Form> findByCreatorId(UUID creatorId);
 }

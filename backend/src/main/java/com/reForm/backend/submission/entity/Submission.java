@@ -1,8 +1,7 @@
 package com.reForm.backend.submission.entity;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.reForm.backend.core.domain.BaseEntity;
-import com.reForm.backend.form.entity.Form;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -22,14 +21,12 @@ import java.util.UUID;
 
 public class Submission extends BaseEntity {
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "form_id", nullable = false)
-    private Form form;
+    private UUID formId;
 
     @JdbcTypeCode(SqlTypes.JSON)
     private JsonNode answers;
 
-    private String submitterIp; // Why do we need this?
+//    private String submitterIp; // Why do we need this?
 
     private String userAgent;
 }

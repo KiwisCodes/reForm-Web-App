@@ -12,8 +12,7 @@ services:
     volumes:
       - db:/data/postgres
     ports:
-      - "5432:5432"
-#      - "5332:5432" # Maps outer port 5332 to inner Postgres default 5432
+      - "5433:5432"
     networks:
       - reform-internal-network
     restart: unless-stopped
