@@ -1,180 +1,67 @@
 # HTTP Boundary Gatekeeper: Interceptors & Route Mapping
-**Document Version:** 1.0  
+**Document Version:** 1.1  
 **Target Platform:** reForm (Modular Monolith)  
 **Author:** Senior Technical Lead
 
 ---
 
-## 1. The HTTP Gateway Gatekeeper
+## 1. Why Do We Need an Interceptor?
 
-To protect our backend APIs, we implement a Spring MVC `HandlerInterceptor` that intercepts incoming HTTP requests **before** they reach our Controller endpoints.
+In Spring Boot, incoming web requests flow through a multi-stage request processing pipeline:
 
-This interceptor resolves the client's identity and clearance Role, queries the rate-limiting engine, and blocks the request with an HTTP `429 Too Many Requests` status if the rate limits are exceeded.
-
----
-
-## 2. The Production-Ready Code: `RateLimitInterceptor.java`
-
-Here is our verified interceptor implementation:
-
-```java
-package com.reForm.backend.core.interceptor;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.reForm.backend.core.port.IRateLimitService;
-import com.reForm.backend.user.entity.Role;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.stereotype.Component;
-import org.springframework.web.servlet.HandlerInterceptor;
-
-import java.io.IOException;
-import java.util.Map;
-
-@Component
-@Slf4j
-@RequiredArgsConstructor
-public class RateLimitInterceptor implements HandlerInterceptor {
-    private final IRateLimitService rateLimitService;
-    private final ObjectMapper objectMapper;
-
-    @Override
-    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
-        String clientKey = resolveClientKey(request);
-        Role role = resolveUserRole();
-
-        boolean allowed = rateLimitService.tryConsume(clientKey, role);
-        if(allowed) {
-            return true; // Token available: Proceed to the Controller
-        }
-
-        long waitTime = rateLimitService.getWaitTimeInSeconds(clientKey, role);
-        log.warn("Blocking request from client: [{}] (Role: {}). Rate limit exceeded. Backoff: {}s", clientKey, role, waitTime);
-
-        buildBlockResponse(response, waitTime);
-        return false; // Blocks request pipeline execution
-    }
-
-    private String resolveClientKey(HttpServletRequest request) {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        
-        // principal is the Details object, while name is the unique String ID (UUID)
-        if(authentication != null
-                && authentication.isAuthenticated()
-                && !"anonymousUser".equals(authentication.getPrincipal())) {
-            return authentication.getName(); // Returns the unique user database UUID
-        }
-
-        // X-Forwarded-For header preserves client IP through reverse proxies
-        String ipAddress = request.getHeader("X-FORWARDED-FOR");
-        if(ipAddress == null || ipAddress.isEmpty() || "unknown".equalsIgnoreCase(ipAddress)) {
-            ipAddress = request.getRemoteAddr(); // Fallback to remote socket IP
-        }
-
-        // Splits comma-separated proxy lists to extract the original client IP (first element)
-        if(ipAddress != null && ipAddress.contains(",")){
-            ipAddress = ipAddress.split(",")[0].trim();
-            return ipAddress;
-        }
-
-        return ipAddress;
-    }
-
-    private Role resolveUserRole() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if(authentication != null
-        && authentication.isAuthenticated()
-            && !"anonymousUser".equals(authentication.getPrincipal())){
-            return authentication
-                    .getAuthorities()
-                    .stream()
-                    .map(grantedAuthority -> {
-                        try{
-                            String roleName = grantedAuthority
-                                    .getAuthority()
-                                    .replace("ROLE_", "");
-                            return Role.valueOf(roleName);
-                        } catch (IllegalArgumentException e){
-                            return Role.FORM_FILLER;
-                        }
-                    })
-                    .findFirst()
-                    .orElse(Role.FORM_FILLER);
-        }
-        return null; // Guest user
-    }
-
-    private void buildBlockResponse(HttpServletResponse response, long waitTime) throws IOException {
-        response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value()); // HTTP 429
-        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        response.setCharacterEncoding("UTF-8");
-        
-        // Retry-After header indicates the backoff wait duration in seconds
-        response.setHeader("Retry-After", String.valueOf(waitTime));
-
-        Map<String, Object> errorsDetails = Map.of(
-                "status", HttpStatus.TOO_MANY_REQUESTS.value(),
-                "error", "Too Many Requests",
-                "message", "Rate limit exceeded. Please try again after the backoff duration.",
-                "retryAfterSeconds", waitTime
-        );
-        response.getWriter().write(objectMapper.writeValueAsString(errorsDetails));
-    }
-}
+```text
+  HTTP Request ──► [ Servlet Filter Chain ] ──► [ Spring MVC Interceptor ] ──► [ Controller ]
+                    (e.g., JWT Auth Filter)       (preHandle Gatekeeper)
 ```
 
----
+If we place rate-limiting checks directly inside our REST Controller methods:
+1.  **Duplicate Boilerplate:** We would have to copy-paste checking code into every endpoint.
+2.  **Resource Waste:** By the time a request reaches a Controller, Spring has already completed heavy processing—parsing JSON payloads, binding parameters, and validating schemas. Rejecting a request at the Controller level wastes CPU and thread capacity.
 
-## 3. Spring Security: `getPrincipal()` vs. `getName()`
-
-During authentication evaluation, the interceptor queries Spring's `SecurityContextHolder`:
-*   **`getPrincipal()`**: Returns the authenticated object instance (e.g. `UserDetails` carrying passwords and roles). If the request is unauthenticated, Spring Security populates this field with the string `"anonymousUser"`. We check against this string to identify guest sessions.
-*   **`getName()`**: A helper method that returns the unique **string identifier** of the user principal (e.g. username or database UUID). We use this as our `clientKey` for logged-in users.
-
----
-
-## 4. IP Tracking & Reverse Proxies: `X-Forwarded-For`
-
-*   **HTTP Header vs. Body:**
-    *   **Headers:** Metadata keys sent at the top of the HTTP request (e.g., `Content-Type`, `Authorization: Bearer <token>`).
-    *   **Body:** The actual payload (usually a JSON string like `{"name": "HR Form"}`) containing target data fields.
-*   **The Proxy Problem:** In production, requests hit a **Reverse Proxy** (like Nginx or Cloudflare) before forwarding to Spring Boot. The Spring Boot application only sees Nginx's IP address if it reads `request.getRemoteAddr()`, which would cause all users globally to share a single rate-limiting bucket.
-*   **The Solution (`X-Forwarded-For`):** Reverse proxies append the user's original IP address to the `X-Forwarded-For` header. If a request travels through multiple proxies, it appends them as a comma-separated list: `client_ip, proxy1_ip, proxy2_ip`. The client IP is always the first element, which we extract using `ipAddress.split(",")[0].trim()`.
+### What the Interceptor Does
+The `RateLimitInterceptor` acts as a centralized **firewall** at the entrance of Spring MVC:
+*   It executes in the **`preHandle`** phase *before* the Controller is invoked.
+*   If a user exceeds their limit, the interceptor blocks the request immediately, returns an HTTP `429 Too Many Requests` status, writes a standard JSON error response, and shuts down the request pipeline, saving database and server threads.
 
 ---
 
-## 5. Mounting Route Registrations: `WebMvcConfig.java`
+## 2. Technical Prerequisites for Building the Interceptor
 
-You must register the interceptor inside Spring MVC's config to bind it to specific request paths.
+To implement the interceptor, we must coordinate three distinct Spring subsystems:
 
-```java
-package com.reForm.backend.core.config;
+### A. The Spring MVC Interceptor Lifecycle
+We implement `HandlerInterceptor` and override **`preHandle()`**. If `preHandle()` returns `true`, the request is allowed to continue. If it returns `false`, Spring MVC halts processing and immediately sends the response back to the client.
 
-import com.reForm.backend.core.interceptor.RateLimitInterceptor;
-import lombok.RequiredArgsConstructor;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
-import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+### B. Spring Security Integration
+Security Filters (like the JWT validation filter) execute before the MVC layer. When the request reaches the interceptor, Spring Security has already populated the **`SecurityContextHolder`**. The interceptor queries this context to determine if the caller is authenticated, allowing us to extract their User ID and Role clearance.
 
-@Configuration
-@RequiredArgsConstructor
-public class WebMvcConfig implements WebMvcConfigurer {
+### C. Manual JSON Serialization
+Since interceptors run outside the normal Controller response-mapping lifecycle, we cannot simply return a Java object and expect Spring to serialize it. We must inject Spring's **`ObjectMapper`** bean and write the JSON error payload directly to the `HttpServletResponse` output writer.
 
-    private final RateLimitInterceptor rateLimitInterceptor;
+---
 
-    @Override
-    public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(rateLimitInterceptor)
-                // Protects Thien's public form APIs and WebSocket handshakes
-                .addPathPatterns("/api/v1/public/**")
-                .addPathPatterns("/ws/**");
-    }
-}
+## 3. Reverse Proxies in Production vs. Local Development
+
+A **Reverse Proxy** is a server (like Nginx, Cloudflare, or an AWS Load Balancer) that sits in front of your application servers to handle SSL certificates, serve static files, and balance traffic load.
+
+```text
+ PRODUCTION ROUTING FLOW:
+ [ User Client ] ──► [ Cloudflare Proxy ] ──► [ Nginx Proxy ] ──► [ Spring Boot Tomcat ]
+                                                                   (Port 8080)
 ```
-*   `addPathPatterns()` tells Spring to route matched URLs (like `/api/v1/public/submit`) to our interceptor first, keeping non-public administrative or static assets unblocked.
+
+### A. Is a Reverse Proxy Used in our Current Setup?
+*   **Local Development:** No. The browser connects directly to the embedded Tomcat server on `localhost:8080` (or `localhost:3000` via Next.js dev server). `request.getRemoteAddr()` returns `127.0.0.1` or local network coordinates.
+*   **Production Deployment:** Yes. In production, requests travel through multiple proxy hops (Cloudflare and Nginx) before reaching Spring Boot.
+
+### B. The Proxy IP Problem & `X-Forwarded-For`
+When a reverse proxy forwards a request, the source TCP IP of the packet becomes the proxy's IP. If your Java code reads `request.getRemoteAddr()`, it will see the IP of the Nginx server. 
+
+If Nginx forwards requests for 10,000 users, **all 10,000 users will share the exact same rate-limiting bucket**. If one user exceeds their limit, Nginx's IP gets blocked, locking out every user in the world!
+
+### C. Preserving Client IPs
+To solve this, reverse proxies inject headers containing the original client IP:
+*   **`X-Forwarded-For`**: A comma-separated list of IPs. Each proxy hop appends the sender's IP: `client_ip, proxy1_ip, proxy2_ip`. The client's real IP is always the first entry.
+*   **`CF-Connecting-IP`**: A secure header injected by Cloudflare that directly contains the client's source IP.
+
+The interceptor inspects these headers to extract the real user's IP address, ensuring IP-based buckets are accurate and isolated.

@@ -1,5 +1,5 @@
 # Redis & Lettuce: Connection & Serialization Architecture
-**Document Version:** 1.0  
+**Document Version:** 1.1  
 **Target Platform:** reForm (Modular Monolith)  
 **Author:** Senior Technical Lead
 
@@ -93,7 +93,7 @@ public class RedisConfig {
     }
 
     /**
-     * RedisTemplate Bean for General Caching & Session Tracking
+     * Spring RedisTemplate Bean for General Caching & Session Tracking
      * Overrides default JdkSerialization to output readable Strings (Keys) and JSON (Values).
      */
     @Bean
@@ -114,12 +114,7 @@ public class RedisConfig {
     }
 
     /**
-     * Native Lettuce RedisClient Bean
-     * Required by Bucket4j to execute raw Compare-And-Swap (CAS) commands on Redis.
-     * 
-     * Why destroyMethod = "shutdown":
-     * Spawns background Netty I/O threads. Specifying destroyMethod tells Spring to 
-     * automatically run client.shutdown() on application exit to prevent thread leaks.
+     * Native Lettuce Redis Client required by Bucket4j to execute atomic transaction scripts.
      */
     @Bean(destroyMethod = "shutdown")
     public RedisClient lettuceClient() {
@@ -132,14 +127,11 @@ public class RedisConfig {
     }
 
     /**
-     * Stateful Redis Connection Bean
-     * Uses ByteArrayCodec.INSTANCE because Bucket4j writes raw binary states.
-     * 
-     * Why destroyMethod = "close":
-     * Closes the active TCP socket connection cleanly during application context shutdown.
+     * Stateful binary connection required by Bucket4j's Lettuce-based state manager.
      */
     @Bean(destroyMethod = "close")
     public StatefulRedisConnection<byte[], byte[]> lettuceStatefulConnection(RedisClient redisClient) {
+        log.info("Opening raw stateful byte-connection for Bucket4j rate limiting");
         return redisClient.connect(ByteArrayCodec.INSTANCE);
     }
 }
@@ -149,7 +141,41 @@ public class RedisConfig {
 
 ## 5. Thread Pools & Resource Management (The Destroy Methods)
 
-In enterprise Java, leaving database connections or Netty threads unmanaged leads to resource exhaustion (out-of-memory or file descriptor leaks). We protect our system using Spring's **Bean Lifecycle Management**:
+In enterprise Java applications, leaving active database connections or Netty threads unmanaged leads to severe **resource leaks** (OOM errors, socket exhaustion, or file descriptor leaks). We protect our system using Spring's **Bean Lifecycle Management** using `destroyMethod`.
 
-*   **`RedisClient` (`destroyMethod = "shutdown"`)**: Spawns multiple non-blocking Netty threads. Without `shutdown()`, these threads continue running in the background after the application stops, preventing the JVM from shutting down cleanly.
-*   **`StatefulRedisConnection` (`destroyMethod = "close"`)**: Occupies an active TCP socket channel. Declaring `close()` guarantees the socket closes and releases the file descriptor back to the operating system when the container exits.
+```text
+       HIERARCHY OF CLEANUP: CLIENT vs. CONNECTION
+       
+  ┌────────────────────────────────────────────────────────┐
+  │ RedisClient (Client Level)                             │
+  │  Exposes: shutdown()                                   │
+  │  Terminates: Netty EventLoop Thread Pools (CPU cores)  │
+  │  ┌──────────────────────────────────────────────────┐  │
+  │  │ StatefulRedisConnection (Socket Level)           │  │
+  │  │  Exposes: close()                                │  │
+  │  │  Terminates: Active TCP socket ports & channels  │  │
+  │  └──────────────────────────────────────────────────┘  │
+  └────────────────────────────────────────────────────────┘
+```
+
+### A. Why does Lettuce spawn multiple threads?
+Lettuce is built on top of **Netty**, an asynchronous event-driven network I/O framework. 
+*   **The Reactor Pattern:** Instead of blocking a thread waiting for Redis to reply, Netty uses non-blocking I/O. It creates an `EventLoopGroup` containing multiple background threads (usually defaults to `2 * CPU cores`).
+*   **Network Polling:** These background threads run continuously in the JVM, polling network socket channels for active read/write operations. When a Redis query returns, Netty worker threads process the TCP packet and pass the data back to your application code.
+*   **The Thread Leak Risk:** Because these Netty threads are managed in background executor pools, if you stop your Spring application without explicitly shutting down Netty, these worker threads will continue running in RAM, preventing the JVM from shutting down cleanly and causing memory leaks during server redeployments.
+
+---
+
+### B. The Difference: `close()` vs. `shutdown()`
+
+They target two different levels of resource abstraction:
+
+#### 1. `StatefulRedisConnection.close()` (Socket Level)
+*   **Target:** The active TCP socket channel.
+*   **What it does:** Closes the physical socket connection between the server and the Redis instance. It releases the allocated local TCP port and frees the operating system **file descriptor** (`FD`).
+*   **Why we need it:** An open connection is a network resource. If you stop the app without closing the socket, the connection stays open on the Redis server side in a `CLOSE_WAIT` state. Over time, this leads to **socket exhaustion** (running out of available TCP ports).
+
+#### 2. `RedisClient.shutdown()` (Client / Engine Level)
+*   **Target:** The Lettuce client engine and its background thread executors.
+*   **What it does:** Terminates the entire client instance, which includes shutting down the Netty `EventLoopGroup` thread pool, cleaning up memory buffers, and releasing internal resources.
+*   **Why we need it:** Calling `connection.close()` only terminates that specific connection socket; it does **not** stop the background Netty worker threads. Calling `client.shutdown()` is the final cleanup step that halts all background event loop executors, allowing the JVM to terminate cleanly without leaking threads.

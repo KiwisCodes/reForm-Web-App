@@ -1,5 +1,5 @@
 # rate-limiting: The Problem Landscape & Architectural Choices
-**Document Version:** 1.0  
+**Document Version:** 1.1  
 **Target Platform:** reForm (Modular Monolith)  
 **Author:** Senior Technical Lead
 
@@ -36,7 +36,7 @@ We evaluate three core algorithms before implementation:
 | Feature | Token Bucket | Fixed Window Counter | Sliding Window Log |
 | :--- | :--- | :--- | :--- |
 | **Logic Description** | Tokens are added to a bucket at a fixed rate. Requests consume tokens. | Counts requests within absolute time slots (e.g. 1-minute blocks). | Records a timestamp log for every request. Counts logs in a sliding window. |
-| **Distributed Cache Size** | **Ultra-Low:** 2 fields (remaining tokens, last refill timestamp). | **Low:** 1 numeric counter. | **High:** Grows dynamically with traffic (thousands of timestamps). |
+| **Distributed Cache Size** | **Ultra-Low:** Stores only 2 fields (remaining tokens, last refill timestamp). | **Low:** 1 numeric counter. | **High:** Grows dynamically with traffic (thousands of timestamps). |
 | **Burst Traffic Handling** | **Excellent:** Permits short-term burst traffic up to the bucket capacity. | **Poor:** Susceptible to boundary storms (double-bursts). | **Perfect:** Completely accurate, zero boundary issues. |
 | **System Overhead** | Minimal CPU calculation. | Extremely low CPU. | High CPU (frequent log pruning and counting). |
 
@@ -53,7 +53,7 @@ For reForm, we choose the **Token Bucket Algorithm**.
 
 ## 3. Decoupling the Gateway: Interceptors vs. Proxies
 
-We position our rate-limiting check at the absolute HTTP boundary of the Spring container.
+When routing traffic, we separate HTTP concerns from OOP/database concerns using Interceptors and Proxies.
 
 ```text
                                 [Tomcat Web Container Boundary]
@@ -66,13 +66,39 @@ We position our rate-limiting check at the absolute HTTP boundary of the Spring 
 An interceptor intercepts incoming HTTP requests **before** they reach Spring MVC's Controller. 
 *   **Why we use it:** We want to reject blocked requests as early as possible. Running rate-limit checks inside the Controller is too late; Spring has already spent CPU cycles parsing JSON bodies, binding variables, and executing filters. Rejecting requests in `preHandle` saves substantial server capacity.
 
-### B. Aspect-Oriented Programming (AOP) Proxies
-Spring uses AOP proxies to inject concerns like `@Transactional` or `@PreAuthorize` at runtime by wrapping target classes. 
-*   **Decoupling:** By keeping the HTTP rate-limiting logic in an Interceptor, we avoid cluttering our Controller classes with proxy annotations or procedural code, adhering to the Single Responsibility Principle.
+---
+
+### B. Deep Dive: Proxies (Pattern, Concept, Class, and Application)
+
+The term **Proxy** is used frequently in our architecture. It represents a Design Pattern, an Architectural Concept, and a concrete JVM Java Class all at once.
+
+```text
+                               THE PROXY ARCHITECTURE
+                               
+   [ Client / Caller ] ──► [ PROXY (Intermediary Gatekeeper) ] ──► [ Real Object / DB ]
+```
+
+#### 1. What is a Proxy?
+A Proxy is an intermediary or "stand-in" object that sits between a caller and a target object. It intercepts all calls to the target object, allowing you to execute logic (such as validation, logging, transaction initialization, or network requests) before forwarding the call to the actual subject.
+
+#### 2. The Multi-Dimensional Nature of Proxies
+*   **As a Design Pattern (OOP):** The Proxy Pattern is a structural design pattern. You define an interface, implement a real service, and then implement a proxy class that also implements the interface. The caller talks only to the proxy, which controls access to the real service.
+*   **As a JVM Java Class:** JDK Dynamic Proxies (`java.lang.reflect.Proxy`) or Spring CGLIB classes are generated dynamically in server RAM at compile-time or runtime. When Spring sees annotations like `@Transactional` or `@PreAuthorize`, it wraps your concrete bean in a dynamically compiled Proxy class.
+*   **As an Architectural Concept:** In network engineering, a **Reverse Proxy** (like Nginx or Cloudflare) sits at the border of your network. It shields your backend Spring Boot servers by accepting public traffic, handling SSL certificates, and forwarding sanitized requests to localhost port `8080`.
+
+#### 3. Why and How Proxies are Used in this Module
+We use proxies at two levels in our rate limiter:
+
+*   **Spring AOP Proxies (Security):** 
+    Spring wraps our controllers and services to handle authentication. When the Interceptor calls `SecurityContextHolder.getContext().getAuthentication()`, it is reading metadata set by the security proxy that intercepted the request in the servlet filter chain.
+*   **Bucket4j `ProxyManager` (Database abstraction):**
+    Bucket4j uses the class `ProxyManager` (and the Lettuce implementation `LettuceBasedProxyManager`). 
+    *   *Why we need it:* Your Java code needs to check a rate-limiting bucket. The bucket state resides remotely in the Redis server. Instead of you writing raw Lettuce socket code to connect, query, and write, the `ProxyManager` acts as a local proxy for the remote Redis bucket.
+    *   *How we use it:* You call `proxyManager.builder().build(key, Supplier)`. The proxy manager returns a local `Bucket` proxy object. When you call `bucket.tryConsume(1)`, the proxy intercepts the call, converts it into a binary Lettuce command, sends it over the network to Redis, and returns the result. To your code, it feels like a fast local memory call, shielding you from database operations.
 
 ---
 
-## 4. Multi-Tenant Key & Capacity Segregation
+## 5. Multi-Tenant Key & Capacity Segregation
 
 We must distinguish between callers so one client's rate-limiting bucket does not impact another.
 

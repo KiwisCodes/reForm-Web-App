@@ -1,5 +1,5 @@
 # Bucket4j: The Role-Based Distributed Rate-Limiting Engine
-**Document Version:** 1.0  
+**Document Version:** 1.1  
 **Target Platform:** reForm (Modular Monolith)  
 **Author:** Senior Technical Lead
 
@@ -126,7 +126,39 @@ public class RateLimitServiceImpl implements IRateLimitService {
 
 ---
 
-## 4. Consumption Probe vs. Estimation Probe
+## 4. Concurrency Synchronization & Compare-And-Swap (CAS)
+
+In high-concurrency systems, multiple requests from the same user can hit our servers simultaneously. We must synchronize the token count updates to prevent race conditions. We evaluate the progression of synchronization strategies:
+
+```text
+               CONCURRENCY STRATEGY COMPARISON
+               
+  1. Synchronized Blocks   ──►  Locks local JVM thread. Fails in multi-node clusters.
+  2. Database Locks        ──►  Locks DB row. Slow, exhausts connection pools.
+  3. Distributed CAS       ──►  Lock-free. Sequential single-threaded Lua script in Redis.
+```
+
+### A. The Evolution of Concurrency Control
+
+#### Level 1: Naive JVM locking (`synchronized` or `ReentrantLock`)
+*   **How it works:** Locks Java threads locally within a single server instance.
+*   **Why it fails:** In a multi-node deployment, Server A's JVM lock has no effect on Server B. Furthermore, blocking threads puts them to sleep, costing heavy OS context-switching overhead.
+
+#### Level 2: Database Pessimistic Locking (`SELECT ... FOR UPDATE`)
+*   **How it works:** Forces the database (PostgreSQL) to lock the target rate-limiting row.
+*   **Why it fails:** Under a flood of requests, other database connections are forced to wait. This quickly exhausts your database connection pool, leading to overall application latency and deadlock risks.
+
+#### Level 3: Distributed CAS (Compare-And-Swap) — Our Choice
+*   **What is CAS:** An atomic instruction used to achieve lock-free synchronization. It works by taking three arguments: a memory location, the expected old value, and the new value. The location is updated **only** if its current value matches the expected old value.
+*   **How it works in Redis:** Since Redis is single-threaded, it processes incoming commands sequentially. Bucket4j leverages Lettuce to send a Lua script containing the CAS logic to Redis. 
+    1. The script reads the current bucket state (version, tokens, timestamp).
+    2. It compares it to the expected state.
+    3. If they match, it updates the values. If a concurrent request changed the state first, the CAS check fails, and the script retries the operation on the new state.
+*   **Why we choose it:** It is **lock-free and non-blocking**. No thread is ever put to sleep or forced to wait for database locks. If a malicious client floods the system, requests are checked and rejected in microseconds, keeping our servers extremely responsive under high load.
+
+---
+
+## 5. Consumption Probe vs. Estimation Probe
 
 Bucket4j distinguishes between **action** operations and **read-only inspection** operations to avoid race conditions and key state changes.
 
@@ -145,7 +177,7 @@ Bucket4j distinguishes between **action** operations and **read-only inspection*
 
 ---
 
-## 5. Client Key vs. Redis Key
+## 6. Client Key vs. Redis Key
 
 *   **`clientKey` (In-App Context):** The raw identifier parsed from the request (e.g. client IP `"192.168.1.100"` or User UUID `"usr_98af"`).
 *   **`redisKey` (In-Database Context):** The final namespace string built by the service: `rate-limit:ROLE:clientKey`.
