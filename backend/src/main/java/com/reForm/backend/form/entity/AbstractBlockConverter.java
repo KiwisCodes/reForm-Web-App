@@ -1,4 +1,5 @@
 package com.reForm.backend.form.entity;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JavaType;
 import tools.jackson.databind.ObjectMapper;
 import com.reForm.backend.form.entity.block.AbstractBlock;
@@ -19,14 +20,22 @@ public class AbstractBlockConverter implements AttributeConverter<List<AbstractB
 
     @Override
     public String convertToDatabaseColumn(List<AbstractBlock> attribute) {
-        return objectMapper.writerFor(blockListType).writeValueAsString(attribute);
+        try {
+            return objectMapper.writerFor(blockListType).writeValueAsString(attribute);
+        } catch (JacksonException e) {
+            throw new RuntimeException("Error writing blocks to JSON string", e);
+        }
     }
 
     @Override
     public List<AbstractBlock> convertToEntityAttribute(String dbData) {
-        if (dbData == null || dbData.isEmpty()) {
-            return new ArrayList<>();
+        try {
+            if (dbData == null || dbData.isEmpty()) {
+                return new ArrayList<>();
+            }
+            return objectMapper.readValue(dbData, blockListType);
+        } catch (JacksonException e) {
+            throw new RuntimeException("Error reading blocks from JSON string", e);
         }
-        return objectMapper.readValue(dbData, blockListType);
     }
 }
