@@ -83,7 +83,7 @@ Content-Type: application/json
 ### 3. GLOBAL WORKSPACE ID VARIABLE
 ### =========================================================================
 # Run 'Create Workspace' first, copy the workspace ID from the response, and paste it here:
-@workspaceId = 7cc48435-ea12-4f4b-aa1b-c99426c75637
+@workspaceId = ed84124a-1800-491b-8c29-fe8b8df5b9d9
 
 
 ### =========================================================================
@@ -221,7 +221,7 @@ X-Workspace-Id: {{workspaceId}}
 # J. Update Form Blocks (PUT /{id}/blocks — replaces the full blocks list)
 # @name UpdateFormBlocks
 PUT http://localhost:8080/api/v1/form/{{formId}}/blocks
-Authorization: Bearer {{alexToken}}
+Authorization: Bearer {{bobToken}}
 X-Workspace-Id: {{workspaceId}}
 Content-Type: application/json
 
@@ -233,7 +233,7 @@ Content-Type: application/json
       "type": "STATIC",
       "staticType": "SHORT_TEXT",
       "label": "What is your full name?",
-      "description": "Please enter your full name",
+      "description": "Please enter your full name: ",
       "required": true,
       "sortOrder": 1,
       "placeholder": "e.g. Jane Doe",
@@ -282,7 +282,7 @@ X-Workspace-Id: {{workspaceId}}
 # M. Publish Attempt By Non-Creator (Charlie is a member but didn't create this form — expect 403 Forbidden)
 # @name PublishFormForbidden
 PATCH http://localhost:8080/api/v1/form/{{formId}}/publish
-Authorization: Bearer {{charlieToken}}
+Authorization: Bearer {{bobToken}}
 X-Workspace-Id: {{workspaceId}}
 
 ###

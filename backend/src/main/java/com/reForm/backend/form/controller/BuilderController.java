@@ -52,7 +52,7 @@ public class BuilderController {
         return ResponseEntity.status(HttpStatus.CREATED).body(formResponseDto);
     }
 
-    @PutMapping("{formId}/blocks")
+    @PutMapping("{formId}/blocks") // Put or Patch?
     @PreAuthorize("@formSecurity.isMember(authentication, #formId)")
     public ResponseEntity<FormResponseDto> updateBlocks(@PathVariable UUID formId,
                                                         @RequestHeader("X-Workspace-Id") UUID workspaceId,
