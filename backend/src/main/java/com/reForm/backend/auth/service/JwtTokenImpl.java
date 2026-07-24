@@ -92,4 +92,14 @@ public class JwtTokenImpl implements ITokenProvider {
                 .getPayload();
         return claims.get("email", String.class);
     }
+
+    @Override
+    public String extractRole(String token) {
+        Claims claims = Jwts.parser()
+                .verifyWith(getSigningKey())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+        return claims.get("role", String.class);
+    }
 }

@@ -178,5 +178,5 @@ public class RedisConfig {
     @Bean(destroyMethod = "close")
     public StatefulRedisConnection<byte[], byte[]> lettuceStatefulConnection(RedisClient redisClient) {
         return redisClient.connect(ByteArrayCodec.INSTANCE);
-    }
+    }//forgot
 }

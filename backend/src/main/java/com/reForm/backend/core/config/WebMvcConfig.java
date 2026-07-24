@@ -34,3 +34,5 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .addPathPatterns("/ws/**");
     }
 }
+
+//rate-limit:userId

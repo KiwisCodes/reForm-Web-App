@@ -1,5 +1,5 @@
 # Bucket4j: The Role-Based Distributed Rate-Limiting Engine
-**Document Version:** 1.1  
+**Document Version:** 1.2  
 **Target Platform:** reForm (Modular Monolith)  
 **Author:** Senior Technical Lead
 
@@ -9,16 +9,16 @@
 
 The core logic of our rate limiter is isolated inside the service layer, keeping it independent of the HTTP interceptor logic. 
 
-We use the **Bucket4j** library with the **Lettuce** extension to store the token bucket state directly in Redis. This allows us to scale our application across multiple servers while enforcing consistent rate limits.
+We use the **Bucket4j** library (`bucket4j_jdk17-lettuce:8.19.0`) with the **Lettuce** extension to store the token bucket state directly in Redis. This allows us to scale our application across multiple servers while enforcing consistent rate limits.
 
 ---
 
 ## 2. Implementing Non-Deprecated APIs (Version 8.19.0+)
 
-Older Bucket4j code bases use deprecated builder patterns that create coupling issues. We implement the latest API design patterns:
+Older Bucket4j code bases use deprecated static builder methods. We implement the latest Bucket4j Lettuce API design patterns:
 
-1.  **`Bucket4jLettuce.casBasedBuilder(connection)`**: Replaces the deprecated `LettuceBasedProxyManager.builderFor` method. It initializes the Compare-And-Swap (CAS) manager using the Lettuce stateful byte connection.
-2.  **`proxyManager.builder().build(key, Supplier)`**: Replaces the deprecated static `.build(key, config)` method. Passing a `Supplier<BucketConfiguration>` ensures the configuration is only fetched/computed when creating a new bucket (if it doesn't exist in Redis yet).
+1.  **`LettuceBasedProxyManager.builderFor(connection).withExpirationStrategy(...)`**: Initializes the Compare-And-Swap (CAS) manager using the Lettuce stateful byte connection and configures expiration TTL strategies.
+2.  **`proxyManager.builder().build(key, Supplier)`**: Replaces deprecated static methods. Passing a `Supplier<BucketConfiguration>` ensures the configuration is only fetched/computed when creating a new bucket (if it doesn't exist in Redis yet).
 3.  **`ExpirationAfterWriteStrategy`**: Automatically assigns a Time-To-Live (TTL) to keys in Redis. If a client is inactive for 10 minutes, Redis automatically deletes the rate-limiting key, preventing cache memory leaks.
 
 ---
@@ -39,7 +39,7 @@ import io.github.bucket4j.ConsumptionProbe;
 import io.github.bucket4j.EstimationProbe;
 import io.github.bucket4j.distributed.ExpirationAfterWriteStrategy;
 import io.github.bucket4j.distributed.proxy.ProxyManager;
-import io.github.bucket4j.redis.lettuce.cas.Bucket4jLettuce;
+import io.github.bucket4j.redis.lettuce.cas.LettuceBasedProxyManager;
 import io.lettuce.core.api.StatefulRedisConnection;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -58,9 +58,9 @@ public class RateLimitServiceImpl implements IRateLimitService {
 
     @PostConstruct
     public void init() {
-        // Bucket4jLettuce.casBasedBuilder handles thread-safe CAS operations in Redis
-        this.proxyManager = Bucket4jLettuce.casBasedBuilder(redisConnection)
-                .expirationAfterWrite(ExpirationAfterWriteStrategy.basedOnTimeForRefillingBucketUpToMax(Duration.ofMinutes(10L)))
+        // LettuceBasedProxyManager handles thread-safe CAS operations in Redis via Lua scripts
+        this.proxyManager = LettuceBasedProxyManager.builderFor(redisConnection)
+                .withExpirationStrategy(ExpirationAfterWriteStrategy.basedOnTimeForRefillingBucketUpToMax(Duration.ofMinutes(10L)))
                 .build();
     }
 
@@ -106,8 +106,8 @@ public class RateLimitServiceImpl implements IRateLimitService {
         String roleKey = (role == null) ? "ANONYMOUS" : role.name();
         RateLimitProperties.Rule rule = rateLimitProperties.getLimits().get(roleKey);
 
-        if(rule == null) {
-            log.warn("No rule found for role {}", roleKey);
+        if (rule == null) {
+            log.warn("No rule found for role {}. Falling back to ANONYMOUS limits.", roleKey);
             rule = rateLimitProperties.getLimits().get("ANONYMOUS");
         }
 

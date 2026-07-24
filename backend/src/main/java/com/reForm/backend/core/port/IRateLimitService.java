@@ -1,19 +1,29 @@
 package com.reForm.backend.core.port;
+
 import com.reForm.backend.user.entity.Role;
 
+/**
+ * RATE LIMIT SERVICE PORT (Interface)
+ * 
+ * Defines the contract for distributed token-bucket rate limiting logic.
+ */
 public interface IRateLimitService {
 
     /**
-     * Evaluates if a request should be allowed based on a key and their security Role.
-     *
-     * @param clientKey Unique identifier of the caller (User UUID or Client IP)
-     * @param role The security role of the caller (null for unauthenticated guests)
-     * @return true if a token was consumed, false if rate limits have been exhausted
+     * Attempts to consume 1 token from the client's rate-limiting bucket in Redis.
+     * 
+     * @param clientKey Unique client identifier (IP address or User UUID)
+     * @param role User security Role (FORM_BUILDER, FORM_FILLER, ADMIN, or null for guests)
+     * @return true if token was available and consumed; false if rate limit breached
      */
     boolean tryConsume(String clientKey, Role role);
 
     /**
-     * Returns the duration in seconds the client must wait before their bucket receives more tokens.
+     * Calculates the estimated backoff wait duration in seconds before the bucket will refill enough tokens.
+     * 
+     * @param clientKey Unique client identifier
+     * @param role User security Role
+     * @return Wait time in seconds (minimum 1)
      */
     long getWaitTimeInSeconds(String clientKey, Role role);
 }
