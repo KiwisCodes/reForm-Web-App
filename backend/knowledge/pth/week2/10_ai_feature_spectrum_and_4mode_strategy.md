@@ -85,6 +85,36 @@ To serve diverse form builder requirements—ranging from zero-cost static surve
                                              [ Budget Priority? ]              [ Quality & Speed? ]
                                                        │                                 │
                                                        ▼                                 ▼
-                                                    MODE 3                            MODE 4
-                                              (Cascaded Pipeline)               (Native Audio Live)
+                                                     MODE 3                            MODE 4
+                                               (Cascaded Pipeline)               (Native Audio Live)
 ```
+
+## 6. Mode Scope Architecture: Block-Level Attachment vs. Form-Level Defaults
+
+A critical architectural decision in reForm is **where the operational Mode is attached**:
+
+### A. The Architectural Verdict: Block-Level Attachment with Form-Level Fallback
+Rather than forcing an entire Form to operate under a single mode, **Mode is attached to individual `FormBlock` instances, with `Form.defaultMode` serving as the fallback baseline**.
+
+```text
+  [ Block 1: Static Input (MODE 1) ]    ──► Candidate types Name & Email (Free)
+                 │
+                 ▼
+  [ Block 2: Voice Interview (MODE 4) ]  ──► Browser opens WSS for 5-min AI Recruiter voice interview!
+                 │
+                 ▼
+  [ Block 3: Follow-up Chat (MODE 2) ]   ──► Candidate chats via text about salary expectations
+                 │
+                 ▼
+  [ Block 4: Document Upload (MODE 1) ]  ──► Candidate uploads Resume PDF (Free)
+```
+
+### B. Architectural & Financial Rationale
+1. **Hybrid Forms:** Form builders can combine static input blocks (Name, Email, PDF upload) with real-time AI voice interview blocks inside a single seamless user flow.
+2. **Token Cost Optimization:** Voice WebSocket connections (Modes 3 & 4) are only established during active voice interview blocks, preventing token charges during static text entry.
+3. **Effective Mode Resolution Formula:**
+   ```java
+   public FormMode getEffectiveMode(Form parentForm) {
+       return this.mode != null ? this.mode : parentForm.getDefaultMode();
+   }
+   ```

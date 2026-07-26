@@ -72,8 +72,10 @@ com.reForm.backend.ai/
 2. **Rate Limiting Engine (`RateLimitServiceImpl`):**  
    Uses Bucket4j 8.19.0 with `LettuceBasedProxyManager.builderFor(redisConnection).withExpirationStrategy(...)` for microsecond CAS Lua execution directly in Redis.
 3. **Database Prompt Config Entity (`FormAgentConfig`):**  
-   One-to-One binding with `Form` storing `modelKey`, `systemPrompt`, `voiceName`, `temperature`, and `byokApiKeyEncrypted` (AES-256-GCM).
-4. **WebSocket Protocol:**  
+   Bound 1-to-One with `Form` (for default mode) or `FormBlock` (for block-level mode overrides). Stores `modelKey`, `systemPrompt`, `voiceName`, `temperature`, and `byokApiKeyEncrypted` (AES-256-GCM).
+4. **Block-Level Mode Scope:**  
+   Operational Mode is attached to individual `FormBlock` instances (`FormBlock.mode`), with `Form.defaultMode` as fallback. This enables hybrid forms (static text blocks $\rightarrow$ voice interview blocks $\rightarrow$ text chat blocks) while optimizing token costs.
+5. **WebSocket Protocol:**  
    Raw binary WebSockets (RFC 6455) using `BinaryWebSocketHandler` over TCP, bypassing STOMP text overhead.
 
 ---

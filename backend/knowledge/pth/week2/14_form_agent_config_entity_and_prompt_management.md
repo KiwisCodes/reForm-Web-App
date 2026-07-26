@@ -17,7 +17,7 @@ In production SaaS platforms (Vapi, Retell AI, OpenAI Assistants API), system in
 
 ## 2. Database Entity Schema: `FormAgentConfig.java`
 
-Instead of scattering prompt strings across `Form.java`, we create a dedicated entity: **`FormAgentConfig.java`** bound 1-to-1 with `Form` / `ConversationalBlock`:
+Instead of scattering prompt strings across `Form.java`, we create a dedicated entity: **`FormAgentConfig.java`** bound 1-to-1 with `Form` (for form defaults) or `FormBlock` (for block-level AI persona overrides):
 
 ```java
 package com.reForm.backend.form.entity;
@@ -29,7 +29,7 @@ import lombok.*;
 /**
  * FORM AGENT CONFIGURATION ENTITY
  * Stores production AI instructions, persona prompts, model choice, 
- * voice settings, and target evaluation goals attached to a form or conversational block.
+ * voice settings, and target evaluation goals attached to a form or individual block.
  */
 @Entity
 @Table(name = "form_agent_configs")
@@ -41,8 +41,12 @@ import lombok.*;
 public class FormAgentConfig extends BaseEntity {
 
     @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "form_id", nullable = false)
+    @JoinColumn(name = "form_id")
     private Form form;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "block_id")
+    private FormBlock block; // Nullable! If set, overrides form-level AI agent config for this block
 
     @Column(name = "model_key", nullable = false, length = 50)
     private String modelKey; // e.g. "GEMINI_3_1_LIVE"
