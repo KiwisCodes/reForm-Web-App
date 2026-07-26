@@ -10,5 +10,6 @@ public interface ITokenProvider {
     boolean validateToken(String token);
     public UUID extractUserId(String token);
     public String extractEmail(String token);
+    public String extractRole(String token);
 
 }

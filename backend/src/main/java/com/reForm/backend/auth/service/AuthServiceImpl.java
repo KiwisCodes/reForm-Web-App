@@ -4,6 +4,7 @@ import com.reForm.backend.auth.dto.AuthResponseDto;
 import com.reForm.backend.auth.dto.LoginRequestDto;
 import com.reForm.backend.auth.port.IAuthService;
 import com.reForm.backend.auth.port.ITokenProvider;
+import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Service;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@Builder
 public class AuthServiceImpl implements IAuthService {
 
     private final AuthenticationManager authenticationManager;
