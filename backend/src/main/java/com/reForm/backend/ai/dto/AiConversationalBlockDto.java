@@ -1,8 +1,13 @@
 package com.reForm.backend.ai.dto;
 
-public record AiConversationalBlockDto(
-        String prompt,
-        String persona,
-        Integer maxQuestions
-) implements AiBlockDto{
+import lombok.Getter;
+import lombok.Setter;
+
+@Getter
+@Setter
+public class AiConversationalBlockDto extends AiBlockDto {
+
+    private String prompt;
+    private String persona;
+    private Integer maxQuestions;
 }

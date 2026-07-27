@@ -1,50 +1,22 @@
 package com.reForm.backend.form.entity.block;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonSubTypes;
-import com.fasterxml.jackson.annotation.JsonTypeInfo;
-import com.reForm.backend.form.entity.block.staticblock.complex.DateTimeStaticBlock;
-import com.reForm.backend.form.entity.block.staticblock.quantitative.NumberRatingStaticBlock;
-import com.reForm.backend.form.entity.block.staticblock.quantitative.OpinionScaleStaticBlock;
-import com.reForm.backend.form.entity.block.staticblock.quantitative.StarRatingStaticBlock;
-import com.reForm.backend.form.entity.block.staticblock.selection.ChoiceStaticBlock;
-import com.reForm.backend.form.entity.block.staticblock.standard.*;
-import com.reForm.backend.form.entity.block.staticblock.upload.FileUploadStaticBlock;
+import tools.jackson.databind.annotation.JsonDeserialize;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.util.UUID;
 
-// Jackson can't cascade a nested @JsonTypeInfo (StaticBlock's own "staticType" discriminator
-// only applies once you're already deserializing as StaticBlock, which never happens since
-// polymorphic dispatch stops at the first concrete match). So the leaf types are listed here
-// directly, keyed by "staticType", instead of routing through the abstract StaticBlock class.
-@JsonTypeInfo(
-        use = JsonTypeInfo.Id.NAME,
-        include = JsonTypeInfo.As.PROPERTY,
-        property = "staticType"
-)
-@JsonSubTypes({
-        @JsonSubTypes.Type(value = ShortTextStaticBlock.class, name = "SHORT_TEXT"),
-        @JsonSubTypes.Type(value = LongTextStaticBlock.class, name = "LONG_TEXT"),
-        @JsonSubTypes.Type(value = EmailStaticBlock.class, name = "EMAIL"),
-        @JsonSubTypes.Type(value = PhoneStaticBlock.class, name = "PHONE"),
-        @JsonSubTypes.Type(value = UrlStaticBlock.class, name = "URL"),
-        @JsonSubTypes.Type(value = ChoiceStaticBlock.class, name = "CHOICE"),
-        @JsonSubTypes.Type(value = StarRatingStaticBlock.class, name = "RATING_STARS"),
-        @JsonSubTypes.Type(value = NumberRatingStaticBlock.class, name = "RATING_NUMBERS"),
-        @JsonSubTypes.Type(value = OpinionScaleStaticBlock.class, name = "OPINION_SCALE"),
-        @JsonSubTypes.Type(value = DateTimeStaticBlock.class, name = "DATE_TIME"),
-        @JsonSubTypes.Type(value = FileUploadStaticBlock.class, name = "FILE_UPLOAD")
-})
-// "type" (e.g. "STATIC") is still sent by clients as the block category, but it no longer
-// drives Jackson dispatch, so treat it as inert rather than failing on an unmapped property.
-@JsonIgnoreProperties(ignoreUnknown = true)
-
+// Dispatch is now a custom deserializer (AbstractBlockDeserializer) instead of a flat
+// @JsonTypeInfo/@JsonSubTypes list: it branches once on "type" (STATIC vs CONVERSATIONAL), then
+// makes a fresh top-level call into StaticBlock.class or ConversationalBlock.class. That second
+// call re-enters ordinary polymorphic resolution (StaticBlock keeps its own "staticType"
+// @JsonTypeInfo/@JsonSubTypes for its 11 leaves) — verified empirically, since Jackson does NOT
+// automatically cascade a nested @JsonTypeInfo when the outer dispatch is annotation-driven
+// (that's the trap a single shared "staticType" discriminator on this class used to avoid).
+@JsonDeserialize(using = AbstractBlockDeserializer.class)
 @Getter
 @Setter
-
-public abstract class AbstractBlock implements IFormBlock{
+public abstract class AbstractBlock implements IFormBlock {
 
     private UUID id = UUID.randomUUID();
     private String label;
