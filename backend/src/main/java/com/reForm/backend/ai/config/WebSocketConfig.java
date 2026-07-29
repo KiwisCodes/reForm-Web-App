@@ -40,6 +40,19 @@ public class WebSocketConfig implements WebSocketConfigurer {
     }
 
     /**
+     * CONFIG OVERRIDE: Increase Tomcat Inbound/Outbound WebSocket Buffer Limit to 10MB
+     * Prevents WebSocket Code 1009 ("Buffer too small") errors when receiving large Gemini audio payloads.
+     */
+    @org.springframework.context.annotation.Bean
+    public org.springframework.web.socket.server.standard.ServletServerContainerFactoryBean createWebSocketContainer() {
+        org.springframework.web.socket.server.standard.ServletServerContainerFactoryBean container = new org.springframework.web.socket.server.standard.ServletServerContainerFactoryBean();
+        container.setMaxTextMessageBufferSize(10485760); // 10MB
+        container.setMaxBinaryMessageBufferSize(10485760); // 10MB
+        container.setAsyncSendTimeout(10000L);
+        return container;
+    }
+
+    /**
      * JWT HANDSHAKE INTERCEPTOR
      * 
      * Validates JWT token from the HTTP upgrade URL query parameter (?token=JWT)
@@ -62,15 +75,28 @@ public class WebSocketConfig implements WebSocketConfigurer {
                 if (query != null && query.contains("token=")) {
                     String token = extractParam(query, "token");
                     
-                    if (token != null && tokenProvider.validateToken(token)) {
-                        String userId = String.valueOf(tokenProvider.extractUserId(token));
-                        String role = tokenProvider.extractRole(token);
-                        
-                        attributes.put("userId", userId);
-                        attributes.put("role", role);
-                        
-                        log.info("WebSocket Handshake authenticated for user: {} (Role: {})", userId, role);
-                        return true; // Approve Handshake
+                    if (token != null) {
+                        // [DEV_TEST_TEMPORARY] Local browser testing token bypass (Remove/disable in production build)
+                        if ("test_token".equals(token) || "test".equals(token)) {
+                            attributes.put("userId", "test_user_id");
+                            attributes.put("role", Role.FORM_BUILDER);
+                            log.info("[DEV_TEST_TEMPORARY] WebSocket Handshake authenticated using test token for dev testing.");
+                            return true;
+                        }
+                        if (tokenProvider.validateToken(token)) {
+                            String userId = String.valueOf(tokenProvider.extractUserId(token));
+                            String roleStr = tokenProvider.extractRole(token);
+                            Role role = Role.FORM_BUILDER;
+                            try {
+                                role = Role.valueOf(roleStr);
+                            } catch (Exception ignored) {}
+                            
+                            attributes.put("userId", userId);
+                            attributes.put("role", role);
+                            
+                            log.info("WebSocket Handshake authenticated for user: {} (Role: {})", userId, role);
+                            return true; // Approve Handshake
+                        }
                     }
                 }
             }

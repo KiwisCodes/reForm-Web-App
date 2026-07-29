@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Mode 4 Gemini Live Voice Test Client</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #f8fafc; margin: 40px; }
+        .card { background: #1e293b; padding: 24px; border-radius: 12px; max-width: 600px; margin: 0 auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        h2 { color: #38bdf8; margin-top: 0; }
+        button { background: #0284c7; color: white; border: none; padding: 12px 20px; font-size: 16px; border-radius: 8px; cursor: pointer; margin-right: 10px; font-weight: bold; }
+        button:disabled { background: #475569; cursor: not-allowed; }
+        .stop { background: #ef4444; }
+        #logs { background: #090d16; padding: 16px; border-radius: 8px; font-family: monospace; height: 250px; overflow-y: auto; margin-top: 20px; font-size: 13px; line-height: 1.5; }
+        .transcript-user { color: #facc15; }
+        .transcript-ai { color: #4ade80; }
+        .status { margin-bottom: 15px; font-weight: bold; color: #cbd5e1; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>🐱 Mode 4 Gemini Live Voice Test (Cat Persona)</h2>
+    <div class="status" id="status">Status: Disconnected</div>
+
+    <div>
+        <button id="connectBtn" onclick="startSession()">Start Live Voice Session</button>
+        <button id="stopBtn" class="stop" onclick="stopSession()" disabled>Stop Session</button>
+    </div>
+
+    <h3>Live Transcripts & Event Logs:</h3>
+    <div id="logs"></div>
+</div>
+
+<script>
+    let ws = null;
+    let audioCtx = null;
+    let micStream = null;
+    let scriptProcessor = null;
+
+    function log(msg, className = '') {
+        const logs = document.getElementById('logs');
+        const div = document.createElement('div');
+        if (className) div.className = className;
+        div.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        logs.appendChild(div);
+        logs.scrollTop = logs.scrollHeight;
+    }
+
+    async function startSession() {
+        document.getElementById('status').innerText = 'Status: Connecting...';
+        log('Initializing WebAudio API and microphone...');
+
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+
+        // Connect WebSocket to Spring Boot VoiceSyncWSHandler (passing mock token & role attribute)
+        const wsUrl = `ws://${window.location.host}/ws/v1/voice?token=test_token&role=FORM_BUILDER`;
+        ws = new WebSocket(wsUrl);
+        ws.binaryType = 'arraybuffer';
+
+        ws.onopen = async () => {
+            document.getElementById('status').innerText = 'Status: Connected & Streaming!';
+            log('WebSocket Connection Opened. Talk into your mic!');
+            document.getElementById('connectBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+
+            // Start Mic Capture
+            micStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1 } });
+            const source = audioCtx.createMediaStreamSource(micStream);
+            scriptProcessor = audioCtx.createScriptProcessor(2048, 1, 1);
+
+            scriptProcessor.onaudioprocess = (e) => {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    const inputBuffer = e.inputBuffer.getChannelData(0);
+                    // Convert Float32Array to 16-bit Little-Endian PCM byte array
+                    const pcm16 = new Int16Array(inputBuffer.length);
+                    for (let i = 0; i < inputBuffer.length; i++) {
+                        pcm16[i] = Math.max(-1, Math.min(1, inputBuffer[i])) * 0x7FFF;
+                    }
+                    ws.send(pcm16.buffer);
+                }
+            };
+
+            source.connect(scriptProcessor);
+            // Connect to silent GainNode (gain=0) leading to destination to force Chrome WebAudio graph execution without echo
+            const muteGain = audioCtx.createGain();
+            muteGain.gain.value = 0;
+            scriptProcessor.connect(muteGain);
+            muteGain.connect(audioCtx.destination);
+        };
+
+        ws.onmessage = async (event) => {
+            if (typeof event.data === 'string') {
+                const data = JSON.parse(event.data);
+                if (data.type === 'TRANSCRIPT_USER') {
+                    log(`You: ${data.text}`, 'transcript-user');
+                } else if (data.type === 'TRANSCRIPT_AI') {
+                    log(`Gemini (Cat): ${data.text}`, 'transcript-ai');
+                } else if (data.type === 'INTERRUPTED') {
+                    log('AI speech interrupted by candidate (Barge-in)!', 'stop');
+                } else {
+                    log(`Text Frame: ${event.data}`);
+                }
+            } else if (event.data instanceof ArrayBuffer) {
+                // Play raw PCM 16-bit audio from Gemini out loud on computer speakers!
+                log(`🔊 Received PCM Audio Chunk (${event.data.byteLength} bytes) from Gemini Live`, 'transcript-ai');
+                await playPcmAudio(event.data);
+            }
+        };
+
+        ws.onclose = () => {
+            document.getElementById('status').innerText = 'Status: Disconnected';
+            log('WebSocket Connection Closed.');
+            stopSession();
+        };
+
+        ws.onerror = (err) => {
+            log(`WebSocket Error: ${JSON.stringify(err)}`, 'stop');
+        };
+    }
+
+    async function playPcmAudio(arrayBuffer) {
+        if (audioCtx && audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+        }
+        const int16Array = new Int16Array(arrayBuffer);
+        const float32Array = new Float32Array(int16Array.length);
+        for (let i = 0; i < int16Array.length; i++) {
+            float32Array[i] = int16Array[i] / 0x7FFF;
+        }
+
+        const buffer = audioCtx.createBuffer(1, float32Array.length, 24000);
+        buffer.getChannelData(0).set(float32Array);
+
+        const source = audioCtx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioCtx.destination);
+        source.start();
+    }
+
+    function stopSession() {
+        if (ws) { ws.close(); ws = null; }
+        if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+        if (scriptProcessor) { scriptProcessor.disconnect(); scriptProcessor = null; }
+        if (audioCtx) { audioCtx.close(); audioCtx = null; }
+
+        document.getElementById('connectBtn').disabled = false;
+        document.getElementById('stopBtn').disabled = true;
+        document.getElementById('status').innerText = 'Status: Disconnected';
+    }
+</script>
+</body>
+</html>

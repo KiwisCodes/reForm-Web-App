@@ -71,14 +71,15 @@ public class VoiceSyncWSHandler extends BinaryWebSocketHandler {
             return;
         }
 
-        // Step 2: Store TCP socket handle in local server RAM map
-        activeSessions.put(userId, session);
+        // Step 2: Wrap session in ConcurrentWebSocketSessionDecorator for Tomcat thread-safety
+        WebSocketSession safeSession = new org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorator(session, 10000, 512000);
+        activeSessions.put(userId, safeSession);
 
         // Step 3: Register distributed online presence in Redis (writes "session:{userId}" hash with 2h TTL)
         sessionTracker.registerSession(userId, session.getId());
 
         // Step 4: Initiate outbound AI stream (calls GeminiLiveVoiceAdapter to open WSS tunnel & send setup JSON)
-        aiVoiceAdapter.startSession(userId, session);
+        aiVoiceAdapter.startSession(userId, safeSession);
 
         log.info("WebSocket connection established for user: {} (Role: {}, Session ID: {})", 
                  userId, role, session.getId());
@@ -93,11 +94,16 @@ public class VoiceSyncWSHandler extends BinaryWebSocketHandler {
      */
     @Override
     protected void handleBinaryMessage(WebSocketSession session, BinaryMessage message) throws Exception {
-        // Extract raw 16-bit PCM binary byte array from Spring's BinaryMessage wrapper
-        byte[] payload = message.getPayload().array();
-        
-        // Pass audio buffer directly to the AI adapter for streaming to Gemini
-        aiVoiceAdapter.sendClientAudio(payload);
+        String userId = (String) session.getAttributes().get("userId");
+        if (userId != null) {
+            // Extract raw 16-bit PCM binary byte array cleanly from ByteBuffer
+            java.nio.ByteBuffer buffer = message.getPayload();
+            byte[] payload = new byte[buffer.remaining()];
+            buffer.get(payload);
+            
+            // Pass audio buffer directly to the AI adapter using candidate clientSession handle
+            aiVoiceAdapter.sendClientAudio(session, payload);
+        }
     }
 
     /**
@@ -114,16 +120,32 @@ public class VoiceSyncWSHandler extends BinaryWebSocketHandler {
         if ("PING".equalsIgnoreCase(payload.trim()) || payload.contains("ping")) {
             String userId = (String) session.getAttributes().get("userId");
             if (userId != null) {
-                // Refresh Redis TTL lease back to 2 hours
                 sessionTracker.refreshTTL(userId);
-                
-                // Respond with PONG confirmation
                 try {
                     session.sendMessage(new TextMessage("PONG"));
                 } catch (IOException e) {
-                    throw new RuntimeException(e);
+                    log.error("Failed to send PONG response to user: {}", userId, e);
                 }
             }
+            return;
+        }
+
+        // Handle JSON text input or raw text from client
+        if (payload.trim().startsWith("{") && payload.trim().endsWith("}")) {
+            try {
+                tools.jackson.databind.JsonNode jsonNode = new tools.jackson.databind.ObjectMapper().readTree(payload);
+                if (jsonNode.has("text")) {
+                    String text = jsonNode.get("text").asText();
+                    aiVoiceAdapter.sendClientText(session, text);
+                    return;
+                }
+            } catch (Exception e) {
+                log.warn("Failed to parse client JSON text frame: {}", payload);
+            }
+        }
+
+        if (!payload.isBlank()) {
+            aiVoiceAdapter.sendClientText(session, payload);
         }
     }
 
@@ -155,8 +177,8 @@ public class VoiceSyncWSHandler extends BinaryWebSocketHandler {
             // 1. Remove socket handle from local server RAM map (Prevents JVM RAM leaks)
             activeSessions.remove(userId);
 
-            // 2. Close outbound Gemini WSS connection (Prevents API bill spikes)
-            aiVoiceAdapter.closeSession();
+            // 2. Close outbound Gemini WSS connection attached to this clientSession
+            aiVoiceAdapter.closeSession(session);
 
             // 3. Delete metadata key from Redis (Prevents Ghost State)
             sessionTracker.deregisterSession(userId);
