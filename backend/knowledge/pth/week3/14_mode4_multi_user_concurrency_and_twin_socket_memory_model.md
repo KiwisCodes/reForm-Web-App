@@ -232,30 +232,8 @@ Imagine **Alice** and **Bob** speak into their microphones at the exact same mil
 
 ---
 
-## 4. Complete List of 6 Bidi Server Message Capabilities & Twin-Socket Handling
+## 4. Bidi Protocol Server Message Variants & Capabilities
 
-Google's official `BidiGenerateContentServerMessage` specification defines **6 top-level message variants in total**. When Outbound Socket 2 receives any of these 6 payload variants from Google, `GeminiLiveVoiceAdapter.processGooglePayload` delegates to specialized handler methods to process and forward frames to Inbound Socket 1:
+For the complete specification of all 6 Google Bidi API server message variants (`setupComplete`, `serverContent`, `toolCall`, `sessionResumptionUpdate`, `toolCallCancellation`, `goAway`) and how `GeminiLiveVoiceAdapter` routes payloads between Outbound Socket 2 and Inbound Socket 1, see:  
+👉 **[16_mode4_google_bidi_websocket_protocol_spec_and_schemas.md Section 2](file:///Users/apple/Coding-projects/reForm-Web-App/backend/knowledge/pth/week3/16_mode4_google_bidi_websocket_protocol_spec_and_schemas.md#2-complete-list-of-6-bidi-server-message-variants--twin-socket-handling)**.
 
-| Variant Key | Purpose & Capability | Handled in reForm? | Handler Method & Twin-Socket Routing |
-| :--- | :--- | :--- | :--- |
-| **`setupComplete`** | Confirms initial session setup is accepted by Google. | ✅ Yes | `handleSetupComplete(...)` logs confirmation and sends setup ACK JSON frame over Socket 1 to browser. |
-| **`serverContent`** | Delivers model 24kHz PCM audio, text transcriptions, barge-in flags (`interrupted`), and grounding metadata. | ✅ Yes | `handleServerContent(...)` decodes Base64 PCM audio to binary byte arrays, forwards raw PCM to Socket 1, and emits transcription JSON. |
-| **`toolCall`** | Requests execution of registered function calls (`functionCalls[]`). | ✅ Yes | `handleToolCall(...)` parses arguments, fires Spring `FormLayoutModificationEvent`, sends `toolResponse` frame over Socket 2 to Google. |
-| **`sessionResumptionUpdate`** | Delivers new session handles for automatic session reconnection. | ✅ Yes | Stores session resumption handle in Socket 1's attribute map for reconnection recovery. |
-| **`toolCallCancellation`** | Notifies client to cancel a pending tool call if the user interrupted mid-turn. | 🔮 Production Ready | Cancels background task execution if user spoke before function execution finished. |
-| **`goAway`** | Server notice before session disconnect (e.g. 30-minute token expiration). | 🔮 Production Ready | Sends graceful disconnect JSON frame to Socket 1 to trigger auto-reconnect on frontend. |
-
-### Detailed Processing Pipeline for the 6 Variants
-
-1. **`setupComplete` Capability:**  
-   Once Google accepts the system prompt, model name, and tool declarations sent on Socket 2, Google returns `{"setupComplete": {}}`. `handleSetupComplete` catches this and notifies the frontend browser on Socket 1 that voice streaming is active.
-2. **`serverContent` Capability:**  
-   Contains model audio chunks (`inlineData.data`), user input transcription (`inputTranscription.text`), AI output transcription (`outputTranscription.text`), and interruption signals (`interrupted: true`). Raw Base64 audio is decoded into raw binary bytes and sent directly to Socket 1 as binary WebSocket frames.
-3. **`toolCall` Capability:**  
-   Contains function call requests (e.g., `modifyFormLayout`). The adapter extracts args, publishes a Spring application event, builds a `toolResponse` frame, and sends it back to Google over Socket 2.
-4. **`sessionResumptionUpdate` Capability:**  
-   Delivers a session token allowing seamless reconnection if network drops.
-5. **`toolCallCancellation` Capability:**  
-   If the user barges in while Gemini is preparing a tool call, Google sends `toolCallCancellation` to drop pending function calls.
-6. **`goAway` Capability:**  
-   Sent by Google prior to server maintenance or 30-minute session limits to prompt graceful client re-handshake.

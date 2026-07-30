@@ -20,7 +20,7 @@ ws://localhost:8080/ws/v1/voice?token=JWT_BEARER_TOKEN&formId=FORM_UUID
 
 ---
 
-## 2. Complete List of 6 Bidi Server Message Variants
+## 2. Complete List of 6 Bidi Server Message Variants & Twin-Socket Handling
 
 According to Google's official Bidi API specification (`BidiGenerateContentServerMessage`), response frames sent from Google over the WebSocket are **polymorphic tagged unions**. 
 
@@ -35,6 +35,34 @@ BidiGenerateContentServerMessage
  ├── 5. sessionResumptionUpdate (BidiGenerateContentSessionResumptionUpdate)
  └── 6. goAway                  (BidiGenerateContentGoAway server shutdown)
 ```
+
+### Complete List of 6 Bidi Server Message Capabilities & Twin-Socket Routing
+
+When Outbound Socket 2 receives any of these 6 payload variants from Google, `GeminiLiveVoiceAdapter.processGooglePayload` delegates to specialized handler methods to process and forward frames to Inbound Socket 1:
+
+| Variant Key | Purpose & Capability | Handled in reForm? | Handler Method & Twin-Socket Routing |
+| :--- | :--- | :--- | :--- |
+| **`setupComplete`** | Confirms initial session setup is accepted by Google. | ✅ Yes | `handleSetupComplete(...)` logs confirmation and sends setup ACK JSON frame over Socket 1 to browser. |
+| **`serverContent`** | Delivers model 24kHz PCM audio, text transcriptions, barge-in flags (`interrupted`), and grounding metadata. | ✅ Yes | `handleServerContent(...)` decodes Base64 PCM audio to binary byte arrays, forwards raw PCM to Socket 1, and emits transcription JSON. |
+| **`toolCall`** | Requests execution of registered function calls (`functionCalls[]`). | ✅ Yes | `handleToolCall(...)` parses arguments, fires Spring `FormLayoutModificationEvent`, sends `toolResponse` frame over Socket 2 to Google. |
+| **`sessionResumptionUpdate`** | Delivers new session handles for automatic session reconnection. | ✅ Yes | Stores session resumption handle in Socket 1's attribute map for reconnection recovery. |
+| **`toolCallCancellation`** | Notifies client to cancel a pending tool call if the user interrupted mid-turn. | 🔮 Production Ready | Cancels background task execution if user spoke before function execution finished. |
+| **`goAway`** | Server notice before session disconnect (e.g. 30-minute token expiration). | 🔮 Production Ready | Sends graceful disconnect JSON frame to Socket 1 to trigger auto-reconnect on frontend. |
+
+### Detailed Processing Pipeline for the 6 Variants
+
+1. **`setupComplete` Capability:**  
+   Once Google accepts the system prompt, model name, and tool declarations sent on Socket 2, Google returns `{"setupComplete": {}}`. `handleSetupComplete` catches this and notifies the frontend browser on Socket 1 that voice streaming is active.
+2. **`serverContent` Capability:**  
+   Contains model audio chunks (`inlineData.data`), user input transcription (`inputTranscription.text`), AI output transcription (`outputTranscription.text`), and interruption signals (`interrupted: true`). Raw Base64 audio is decoded into raw binary bytes and sent directly to Socket 1 as binary WebSocket frames.
+3. **`toolCall` Capability:**  
+   Contains function call requests (e.g., `modifyFormLayout`). The adapter extracts args, publishes a Spring application event, builds a `toolResponse` frame, and sends it back to Google over Socket 2.
+4. **`sessionResumptionUpdate` Capability:**  
+   Delivers a session token allowing seamless reconnection if network drops.
+5. **`toolCallCancellation` Capability:**  
+   If the user barges in while Gemini is preparing a tool call, Google sends `toolCallCancellation` to drop pending function calls.
+6. **`goAway` Capability:**  
+   Sent by Google prior to server maintenance or 30-minute session limits to prompt graceful client re-handshake.
 
 ---
 
@@ -191,32 +219,47 @@ In **Phase A**, the Form Builder (John) speaks to the AI to design forms. The sy
 sequenceDiagram
     autonumber
     actor User as Form Builder (John)
-    participant VoiceAgent as Primary Voice Agent (Gemini Live Bidi)
+    participant VoiceAgent as Mode 4 Voice Agent (Gemini Live Bidi)
     participant Proxy as GeminiLiveVoiceAdapter
     participant EventBus as Spring ApplicationEventPublisher
-    participant CoBuilder as Form Layout Specialist (FormLayoutEventListener)
+    participant LayoutAgent as Mode 2 LayoutAgent (Gemini Flash)
     participant DB as PostgreSQL Database
     participant UI as Next.js Canvas UI
 
-    User->>Proxy: Speaks: "Add a customer service feedback section"
+    User->>Proxy: Speaks: "Add a dropdown field for Department with Sales, Eng, Marketing"
     Proxy->>VoiceAgent: Base64 PCM audio stream
-    VoiceAgent-->>Proxy: BidiGenerateContentToolCall ("modifyFormLayout")
+    VoiceAgent-->>Proxy: BidiGenerateContentToolCall ("modifyFormLayout", action="ADD")
     Proxy->>EventBus: publishEvent(FormLayoutModificationEvent)
-    EventBus->>CoBuilder: @EventListener handleFormLayoutModification(...)
-    CoBuilder->>CoBuilder: Invoke BlockFactory & construct AbstractBlock JSON
-    CoBuilder->>DB: Persist ConversationalBlock / StaticBlock
-    CoBuilder->>UI: Broadcast FORM_BLOCK_ADDED over WebSocket
+    EventBus->>LayoutAgent: @EventListener handleFormLayoutModification(...)
+    Note over LayoutAgent: Executes in MODE 2 (Structured REST JSON Mode)<br/>Prompts Gemini Flash for valid DTO Schema
+    LayoutAgent->>LayoutAgent: Invoke BlockFactory (ADD / UPDATE / DELETE block)
+    LayoutAgent->>DB: Persist updated Form entity (ConversationalBlock / StaticBlock)
+    LayoutAgent->>UI: Broadcast FORM_LAYOUT_MODIFIED over WebSocket
     Proxy->>VoiceAgent: sendToolResponse ("SUCCESS")
-    VoiceAgent-->>Proxy: Audio response ("Added the customer service section!")
+    VoiceAgent-->>Proxy: Audio response ("Added the Department dropdown field!")
     Proxy-->>User: Decoded raw PCM 24kHz audio speaker stream
 ```
 
+### The Block Architect Agent: `LayoutAgent` (Operating in Mode 2)
+
+The agent responsible for creating, modifying, reordering, and deleting form blocks is **`LayoutAgent`** (also referred to as `FormLayoutSpecialistAgent`). 
+
+#### Why `LayoutAgent` Operates in Mode 2 (Structured JSON Mode):
+- **Mode 4 (Bidi Voice WSS)** is optimized for **real-time audio & fast conversational speech (~300ms)**. It is not designed to produce complex, strictly-validated DTO JSON syntax.
+- **Mode 2 (Structured REST API / JSON Mode)** uses **Gemini Flash (`gemini-2.5-flash` / `gemini-3.6-flash`)** with strict JSON schemas (`responseSchema`). This guarantees 100% deterministic, syntax-valid block DTO generation without audio latency bottlenecks.
+
+#### Supported Form Operations handled by `LayoutAgent` (Mode 2):
+1. **`ADD_BLOCK`**: Creates new `StaticBlock` (text inputs, dropdowns, checkboxes, dates) or `ConversationalBlock` (voice interview sub-sections) with labels, options, and validation rules.
+2. **`UPDATE_BLOCK`**: Modifies existing block metadata (e.g. changing field labels, marking fields as required, updating interview max question limits).
+3. **`DELETE_BLOCK`**: Removes specified target block ID and automatically re-indexes remaining canvas block order positions (`orderIndex`).
+4. **`REORDER_BLOCKS`**: Re-arranges form section placement on the canvas.
+
 ### Two-Agent Roles & Decoupling Rationale
 
-| Agent / Component | Primary Responsibility | Decoupling Rationale |
-| :--- | :--- | :--- |
-| **Primary Voice Agent** (`GeminiLiveVoiceAdapter`) | Handles real-time speech, low-latency audio proxying (~300ms), conversational tone, and intent extraction. | Keeps voice streaming fast & lightweight. Does not block audio streams waiting for database transactions or schema calculations. |
-| **Form Layout Co-Builder Specialist** (`FormLayoutEventListener` & `BlockFactory`) | Specialized domain agent responsible for form blocks, layout rules, validation, PostgreSQL JSONB persistence, and canvas UI sync. | Can be updated and tested independently. Developers can add 50 new block types without touching any voice code. |
+| Agent / Component | Execution Mode | Primary Responsibility | Decoupling Rationale |
+| :--- | :--- | :--- | :--- |
+| **Primary Voice Agent** (`GeminiLiveVoiceAdapter`) | **Mode 4** (Live Bidi WSS) | Handles real-time speech, low-latency audio proxying (~300ms), conversational tone, and intent extraction (`modifyFormLayout`). | Keeps voice streaming fast & lightweight. Does not block audio streams waiting for database transactions or schema calculations. |
+| **Block Architect Agent** (`LayoutAgent` / `FormLayoutEventListener`) | **Mode 2** (REST / JSON Mode) | Receives layout modification events, prompts Gemini Flash in Mode 2 for strict DTO JSON, executes ADD / UPDATE / DELETE operations via `BlockFactory`, persists to PostgreSQL, and broadcasts canvas UI updates. | Can be updated and tested independently. Developers can add 50 new block types without touching any voice code. |
 
 ---
 
