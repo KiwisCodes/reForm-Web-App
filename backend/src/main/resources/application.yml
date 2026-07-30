@@ -10,8 +10,7 @@ spring:
 #      write-dates-as-timestamps: false
 
   datasource:
-    # 5433 (not the Postgres default 5432) because a native Windows PostgreSQL service already owns port 5432 on this machine.
-    url: jdbc:postgresql://localhost:5433/${POSTGRES_DB:reform_db}
+    url: jdbc:postgresql://localhost:5432/${POSTGRES_DB:reform_db}
     username: ${POSTGRES_USER:postgres}
     password: ${POSTGRES_PASSWORD:password}
     driver-class-name: org.postgresql.Driver
@@ -36,7 +35,7 @@ app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
   security:
-    secret: ${JWT_SECRET_KEY}
+    secret: ${JWT_SECRET_KEY:default_dev_secret_key_reForm_platform_secret_2026_super_secure_256bit}
     expiration-ms: ${EXPIRATION_DURATION:3600000}
   rate-limiting:
     limits:
@@ -57,3 +56,6 @@ app:
         refill-tokens: 20
         refill-seconds: 10
 
+gemini:
+  api:
+    key: ${GEMINI_API_KEY}

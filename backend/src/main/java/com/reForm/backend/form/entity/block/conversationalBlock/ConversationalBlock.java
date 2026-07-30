@@ -17,6 +17,7 @@ public class ConversationalBlock extends AbstractBlock {
 
     private String prompt;
     private String persona;
+    private String voiceName; // Optional block-level voice override (e.g. "Puck", "Kore")
     private Integer maxQuestions;
 
     @Override

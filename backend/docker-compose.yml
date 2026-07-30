@@ -12,7 +12,7 @@ services:
     volumes:
       - db:/data/postgres
     ports:
-      - "5433:5432"
+      - "5432:5432"
     networks:
       - reform-internal-network
     restart: unless-stopped

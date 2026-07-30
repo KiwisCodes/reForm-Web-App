@@ -21,13 +21,24 @@ public interface IAiVoiceAdapter {
     /**
      * Forwards raw binary audio frames (PCM 16-bit) received from the candidate's mic to the AI provider.
      * 
+     * @param clientSession The candidate's active WebSocket session
      * @param audioData The raw binary audio payload
      */
-    void sendClientAudio(byte[] audioData);
+    void sendClientAudio(WebSocketSession clientSession, byte[] audioData);
+
+    /**
+     * Forwards text input message received from client to the AI provider.
+     * 
+     * @param clientSession The candidate's active WebSocket session
+     * @param text The text message payload
+     */
+    void sendClientText(WebSocketSession clientSession, String text);
 
     /**
      * Called when the client terminates the connection or a network drop occurs.
      * Closes the active session with the AI provider.
+     * 
+     * @param clientSession The candidate's active WebSocket session
      */
-    void closeSession();
+    void closeSession(WebSocketSession clientSession);
 }
