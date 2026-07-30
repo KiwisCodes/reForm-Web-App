@@ -117,7 +117,6 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/users/register").permitAll()          // Open user registration path (No token needed)
                         .requestMatchers("/api/v1/submissions/**").permitAll()
                         .requestMatchers("/api/v1/f/**").permitAll()
-                        .requestMatchers("/test-voice.html").permitAll()               // Open test voice client page
                         .requestMatchers("/ws/v1/voice/**").permitAll()                 // Open voice WebSocket endpoint
                         .requestMatchers("/.well-known/**").permitAll()                // [DEV_TEST_TEMPORARY] Chrome DevTools background noise request bypass
                         .requestMatchers("/favicon.ico").permitAll()                   // [DEV_TEST_TEMPORARY] Browser favicon noise request bypass
