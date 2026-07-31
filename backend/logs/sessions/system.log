@@ -57,3 +57,121 @@
 2026-07-30 13:53:37.883 [SpringApplicationShutdownHook] INFO  - Closing JPA EntityManagerFactory for persistence unit 'default'
 2026-07-30 13:53:37.930 [SpringApplicationShutdownHook] INFO  - HikariPool-1 - Shutdown initiated...
 2026-07-30 13:53:37.933 [SpringApplicationShutdownHook] INFO  - HikariPool-1 - Shutdown completed.
+2026-07-31 08:35:32.714 [background-preinit] INFO  - HV000001: Hibernate Validator 9.1.0.Final
+2026-07-31 08:35:32.763 [main] INFO  - Starting BackendApplication using Java 21.0.10 with PID 81955 (/Users/apple/Coding-projects/reForm-Web-App/backend/target/classes started by apple in /Users/apple/Coding-projects/reForm-Web-App/backend)
+2026-07-31 08:35:32.764 [main] INFO  - No active profile set, falling back to 1 default profile: "default"
+2026-07-31 08:35:33.491 [main] INFO  - Multiple Spring Data modules found, entering strict repository configuration mode
+2026-07-31 08:35:33.492 [main] INFO  - Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-07-31 08:35:33.630 [main] INFO  - Finished Spring Data repository scanning in 132 ms. Found 5 JPA repository interfaces.
+2026-07-31 08:35:33.645 [main] INFO  - Multiple Spring Data modules found, entering strict repository configuration mode
+2026-07-31 08:35:33.646 [main] INFO  - Bootstrapping Spring Data Redis repositories in DEFAULT mode.
+2026-07-31 08:35:33.660 [main] INFO  - Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.reForm.backend.form.repository.FormAiAgentProfileRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-07-31 08:35:33.661 [main] INFO  - Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.reForm.backend.form.repository.FormRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-07-31 08:35:33.661 [main] INFO  - Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.reForm.backend.submission.repository.SubmissionRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-07-31 08:35:33.662 [main] INFO  - Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.reForm.backend.user.repository.UserRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-07-31 08:35:33.662 [main] INFO  - Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.reForm.backend.user.repository.WorkspaceRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-07-31 08:35:33.662 [main] INFO  - Finished Spring Data repository scanning in 9 ms. Found 0 Redis repository interfaces.
+2026-07-31 08:35:34.156 [main] INFO  - Tomcat initialized with port 8080 (http)
+2026-07-31 08:35:34.168 [main] INFO  - Initializing ProtocolHandler ["http-nio-8080"]
+2026-07-31 08:35:34.170 [main] INFO  - Starting service [Tomcat]
+2026-07-31 08:35:34.170 [main] INFO  - Starting Servlet engine: [Apache Tomcat/11.0.22]
+2026-07-31 08:35:34.206 [main] INFO  - Root WebApplicationContext: initialization completed in 1404 ms
+2026-07-31 08:35:34.369 [main] ERROR - Unable to load io.netty.resolver.dns.macos.MacOSDnsServerAddressStreamProvider, fallback to system defaults. This may result in incorrect DNS resolutions on MacOS. Check whether you have a dependency on 'io.netty:netty-resolver-dns-native-macos'. Use DEBUG level to see the full stack: java.lang.UnsatisfiedLinkError: failed to load the required native library
+2026-07-31 08:35:34.711 [main] INFO  - HHH008540: Processing PersistenceUnitInfo [name: default]
+2026-07-31 08:35:34.753 [main] INFO  - HHH000001: Hibernate ORM core version 7.4.1.Final
+2026-07-31 08:35:35.055 [main] INFO  - No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-07-31 08:35:35.083 [main] INFO  - HikariPool-1 - Starting...
+2026-07-31 08:35:35.214 [main] INFO  - HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@6067e7c1
+2026-07-31 08:35:35.215 [main] INFO  - HikariPool-1 - Start completed.
+2026-07-31 08:35:35.286 [main] INFO  - HHH10001005: Database info:
+	Database JDBC URL [jdbc:postgresql://localhost:5432/reform_db]
+	Database driver: PostgreSQL JDBC Driver
+	Database dialect: PostgreSQLDialect
+	Database version: 15.17
+	Default catalog/schema: reform_db/public
+	Autocommit mode: undefined/unknown
+	Isolation level: READ_COMMITTED [default READ_COMMITTED]
+	JDBC fetch size: none
+	Pool: DataSourceConnectionProvider
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-07-31 08:35:36.080 [main] INFO  - HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-07-31 08:35:36.180 [main] INFO  - Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-07-31 08:35:36.264 [main] INFO  - Hibernate is in classpath; If applicable, HQL parser will be used.
+2026-07-31 08:35:36.824 [main] INFO  - Global AuthenticationManager configured with UserDetailsService bean with name customerUserDetailService
+2026-07-31 08:35:36.912 [main] INFO  - Configuring native Lettuce client for Bucket4j targeting: localhost:6379
+2026-07-31 08:35:37.392 [main] WARN  - spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
+2026-07-31 08:35:38.064 [main] INFO  - Starting ProtocolHandler ["http-nio-8080"]
+2026-07-31 08:35:38.071 [main] INFO  - Tomcat started on port 8080 (http) with context path '/'
+2026-07-31 08:35:38.078 [main] INFO  - Started BackendApplication in 6.014 seconds (process running for 6.965)
+2026-07-31 08:36:43.313 [http-nio-8080-exec-1] INFO  - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-07-31 08:36:43.315 [http-nio-8080-exec-1] INFO  - Initializing Servlet 'dispatcherServlet'
+2026-07-31 08:36:43.321 [http-nio-8080-exec-1] INFO  - Completed initialization in 6 ms
+2026-07-31 08:36:43.366 [http-nio-8080-exec-1] INFO  - [DEV_TEST_TEMPORARY] WebSocket Handshake authenticated using test token for dev testing.
+2026-07-31 08:36:43.903 [SimpleAsyncTaskExecutor-1] INFO  - Outbound WebSocket connection to Google Gemini Live established for user: test_user_id
+2026-07-31 08:36:43.903 [SimpleAsyncTaskExecutor-1] INFO  - Building setup context for userId: test_user_id, role: FORM_BUILDER, formId: null, modelKey: null
+2026-07-31 08:36:43.930 [SimpleAsyncTaskExecutor-1] INFO  - [SENDING SETUP TO GEMINI LIVE]: {"setup":{"generationConfig":{"responseModalities":["AUDIO"],"speechConfig":{"voiceConfig":{"prebuiltVoiceConfig":{"voiceName":"Puck"}}}},"systemInstruction":{"parts":[{"text":"You are a helpful AI assistant who acts like a playful cat assisting a form builder. Answer everything clearly, help them build forms, and end every single sentence with the word 'meow'."}]},"model":"models/gemini-3.1-flash-live-preview","tools":[{"functionDeclarations":[{"name":"modifyFormLayout","parameters":{"properties":{"userIntent":{"type":"STRING","description":"The extracted user intent (e.g. 'ADD_CONTACT_SECTION', 'DELETE_BLOCK_2')"},"targetBlockId":{"type":"STRING","description":"Optional target block ID to modify or remove."}},"type":"OBJECT","required":["userIntent"]},"description":"Triggers structural modifications to the form layout canvas."},{"name":"searchUserDocument","parameters":{"properties":{"query":{"type":"STRING","description":"The specific question or topic to search for in the user documents."}},"type":"OBJECT","required":["query"]},"description":"Queries uploaded user documents, company handbooks, or resumes to retrieve exact answers."}]}]}}
+2026-07-31 09:23:44.811 [SpringApplicationShutdownHook] INFO  - Commencing graceful shutdown. Waiting for active requests to complete
+2026-07-31 09:23:46.831 [tomcat-shutdown] INFO  - Graceful shutdown complete
+2026-07-31 09:23:47.014 [SpringApplicationShutdownHook] INFO  - Closing JPA EntityManagerFactory for persistence unit 'default'
+2026-07-31 09:23:47.097 [SpringApplicationShutdownHook] INFO  - HikariPool-1 - Shutdown initiated...
+2026-07-31 09:23:47.106 [SpringApplicationShutdownHook] INFO  - HikariPool-1 - Shutdown completed.
+2026-07-31 10:14:05.033 [background-preinit] INFO  - HV000001: Hibernate Validator 9.1.0.Final
+2026-07-31 10:14:05.079 [main] INFO  - Starting BackendApplication using Java 21.0.10 with PID 6862 (/Users/apple/Coding-projects/reForm-Web-App/backend/target/classes started by apple in /Users/apple/Coding-projects/reForm-Web-App/backend)
+2026-07-31 10:14:05.081 [main] INFO  - No active profile set, falling back to 1 default profile: "default"
+2026-07-31 10:14:05.792 [main] INFO  - Multiple Spring Data modules found, entering strict repository configuration mode
+2026-07-31 10:14:05.793 [main] INFO  - Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-07-31 10:14:05.920 [main] INFO  - Finished Spring Data repository scanning in 121 ms. Found 5 JPA repository interfaces.
+2026-07-31 10:14:05.934 [main] INFO  - Multiple Spring Data modules found, entering strict repository configuration mode
+2026-07-31 10:14:05.935 [main] INFO  - Bootstrapping Spring Data Redis repositories in DEFAULT mode.
+2026-07-31 10:14:05.950 [main] INFO  - Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.reForm.backend.form.repository.FormAiAgentProfileRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-07-31 10:14:05.950 [main] INFO  - Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.reForm.backend.form.repository.FormRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-07-31 10:14:05.951 [main] INFO  - Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.reForm.backend.submission.repository.SubmissionRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-07-31 10:14:05.951 [main] INFO  - Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.reForm.backend.user.repository.UserRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-07-31 10:14:05.951 [main] INFO  - Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.reForm.backend.user.repository.WorkspaceRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository
+2026-07-31 10:14:05.951 [main] INFO  - Finished Spring Data repository scanning in 9 ms. Found 0 Redis repository interfaces.
+2026-07-31 10:14:06.435 [main] INFO  - Tomcat initialized with port 8080 (http)
+2026-07-31 10:14:06.445 [main] INFO  - Initializing ProtocolHandler ["http-nio-8080"]
+2026-07-31 10:14:06.446 [main] INFO  - Starting service [Tomcat]
+2026-07-31 10:14:06.446 [main] INFO  - Starting Servlet engine: [Apache Tomcat/11.0.22]
+2026-07-31 10:14:06.477 [main] INFO  - Root WebApplicationContext: initialization completed in 1356 ms
+2026-07-31 10:14:06.634 [main] ERROR - Unable to load io.netty.resolver.dns.macos.MacOSDnsServerAddressStreamProvider, fallback to system defaults. This may result in incorrect DNS resolutions on MacOS. Check whether you have a dependency on 'io.netty:netty-resolver-dns-native-macos'. Use DEBUG level to see the full stack: java.lang.UnsatisfiedLinkError: failed to load the required native library
+2026-07-31 10:14:06.974 [main] INFO  - HHH008540: Processing PersistenceUnitInfo [name: default]
+2026-07-31 10:14:07.017 [main] INFO  - HHH000001: Hibernate ORM core version 7.4.1.Final
+2026-07-31 10:14:07.319 [main] INFO  - No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-07-31 10:14:07.344 [main] INFO  - HikariPool-1 - Starting...
+2026-07-31 10:14:07.474 [main] INFO  - HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@2f7d8a7c
+2026-07-31 10:14:07.475 [main] INFO  - HikariPool-1 - Start completed.
+2026-07-31 10:14:07.536 [main] INFO  - HHH10001005: Database info:
+	Database JDBC URL [jdbc:postgresql://localhost:5432/reform_db]
+	Database driver: PostgreSQL JDBC Driver
+	Database dialect: PostgreSQLDialect
+	Database version: 15.17
+	Default catalog/schema: reform_db/public
+	Autocommit mode: undefined/unknown
+	Isolation level: READ_COMMITTED [default READ_COMMITTED]
+	JDBC fetch size: none
+	Pool: DataSourceConnectionProvider
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-07-31 10:14:08.330 [main] INFO  - HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-07-31 10:14:08.416 [main] INFO  - Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-07-31 10:14:08.492 [main] INFO  - Hibernate is in classpath; If applicable, HQL parser will be used.
+2026-07-31 10:14:08.900 [main] INFO  - Global AuthenticationManager configured with UserDetailsService bean with name customerUserDetailService
+2026-07-31 10:14:08.989 [main] INFO  - Configuring native Lettuce client for Bucket4j targeting: localhost:6379
+2026-07-31 10:14:09.459 [main] WARN  - spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
+2026-07-31 10:14:10.141 [main] INFO  - Starting ProtocolHandler ["http-nio-8080"]
+2026-07-31 10:14:10.148 [main] INFO  - Tomcat started on port 8080 (http) with context path '/'
+2026-07-31 10:14:10.156 [main] INFO  - Started BackendApplication in 5.475 seconds (process running for 6.205)
+2026-07-31 10:14:16.482 [http-nio-8080-exec-1] INFO  - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-07-31 10:14:16.483 [http-nio-8080-exec-1] INFO  - Initializing Servlet 'dispatcherServlet'
+2026-07-31 10:14:16.485 [http-nio-8080-exec-1] INFO  - Completed initialization in 2 ms
+2026-07-31 10:14:16.528 [http-nio-8080-exec-1] INFO  - [DEV_TEST_TEMPORARY] WebSocket Handshake authenticated using test token for dev testing.
+2026-07-31 10:14:17.214 [SimpleAsyncTaskExecutor-1] INFO  - Outbound WebSocket connection to Google Gemini Live established for user: test_user_id
+2026-07-31 10:14:17.215 [SimpleAsyncTaskExecutor-1] INFO  - Building setup context for userId: test_user_id, role: FORM_BUILDER, formId: null, modelKey: null
+2026-07-31 10:14:17.250 [SimpleAsyncTaskExecutor-1] INFO  - [SENDING SETUP TO GEMINI LIVE]: {"setup":{"generationConfig":{"speechConfig":{"voiceConfig":{"prebuiltVoiceConfig":{"voiceName":"Puck"}}},"responseModalities":["AUDIO"]},"systemInstruction":{"parts":[{"text":"You are a helpful AI assistant who acts like a playful cat assisting a form builder. Answer everything clearly, help them build forms, and end every single sentence with the word 'meow'."}]},"model":"models/gemini-3.1-flash-live-preview","tools":[{"functionDeclarations":[{"parameters":{"properties":{"userIntent":{"type":"STRING","description":"The extracted user intent (e.g. 'ADD_CONTACT_SECTION', 'DELETE_BLOCK_2')"},"targetBlockId":{"type":"STRING","description":"Optional target block ID to modify or remove."}},"required":["userIntent"],"type":"OBJECT"},"name":"modifyFormLayout","description":"Triggers structural modifications to the form layout canvas."},{"parameters":{"properties":{"query":{"type":"STRING","description":"The specific question or topic to search for in the user documents."}},"required":["query"],"type":"OBJECT"},"name":"searchUserDocument","description":"Queries uploaded user documents, company handbooks, or resumes to retrieve exact answers."}]}]}}
+2026-07-31 10:16:07.217 [SpringApplicationShutdownHook] INFO  - Commencing graceful shutdown. Waiting for active requests to complete
+2026-07-31 10:16:09.230 [tomcat-shutdown] INFO  - Graceful shutdown complete
+2026-07-31 10:16:09.362 [SpringApplicationShutdownHook] INFO  - Closing JPA EntityManagerFactory for persistence unit 'default'
+2026-07-31 10:16:09.400 [SpringApplicationShutdownHook] INFO  - HikariPool-1 - Shutdown initiated...
+2026-07-31 10:16:09.402 [SpringApplicationShutdownHook] INFO  - HikariPool-1 - Shutdown completed.

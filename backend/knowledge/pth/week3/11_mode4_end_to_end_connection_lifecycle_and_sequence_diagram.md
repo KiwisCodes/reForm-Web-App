@@ -2,7 +2,7 @@
 
 **Document Version:** 1.0  
 **Target System:** reForm Monolith (`com.reForm.backend.ai` & Next.js Frontend)  
-**Parent Specification:** [10_mode4_implementation_retrospective_and_js_to_java_mapping.md](file:///Users/apple/Coding-projects/reForm-Web-App/backend/knowledge/pth/week3/10_mode4_implementation_retrospective_and_js_to_java_mapping.md)  
+**Parent Specification:** [10_mode4_master_syllabus_and_table_of_contents.md](file:///Users/apple/Coding-projects/reForm-Web-App/backend/knowledge/pth/week3/10_mode4_master_syllabus_and_table_of_contents.md)  
 
 ---
 
@@ -188,3 +188,25 @@ sequenceDiagram
 * **Frontend Playback Callback:** **AUTOMATIC**. Browser receives WebSocket frame `ws.onmessage = (event) => { ... }`.
   - If text JSON: Appends word to streaming transcript UI.
   - If binary PCM bytes: `audioContext.decodeAudioData()` enqueues PCM buffer into Web Audio API speaker queue for immediate real-time playback.
+
+---
+
+## 5. Automatic vs. Manual Execution Matrix
+
+To clearly distinguish what is executed automatically by low-level engines vs. what is written and executed by custom Java/Spring Boot code:
+
+| Step # | Lifecycle Step | Executed By | Type | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| **1** | Client `new WebSocket(url)` | Client Browser Engine (V8/Webkit) | ⚙️ **AUTOMATIC** | Initiates TCP handshake & HTTP GET Upgrade request on port 8080. |
+| **2** | Port 8080 HTTP Intercept | Tomcat Embedded Servlet Engine | ⚙️ **AUTOMATIC** | Tomcat catches HTTP GET `/ws/v1/voice` request on port 8080. |
+| **3** | `JwtHandshakeInterceptor.beforeHandshake` | Tomcat invoking Custom Java | 🛠️ **MANUAL (Written by us)** | Validates JWT token, extracts claims (`userId`, `role`), sets attributes. |
+| **4** | HTTP 101 Switching Protocols | Tomcat Embedded Servlet Engine | ⚙️ **AUTOMATIC** | Tomcat returns HTTP 101 ACK to browser, completing socket upgrade. |
+| **5** | `VoiceSyncWSHandler.afterConnectionEstablished` | Tomcat invoking Custom Java | 🛠️ **MANUAL (Written by us)** | Wraps socket in 10MB decorator, registers Redis presence, starts AI session. |
+| **6** | `StandardWebSocketClient.execute(...)` | Spring Client Engine | 🛠️ **MANUAL Call to Framework** | Opens outbound WSS tunnel to Google Cloud (`wss://generativelanguage...`). |
+| **7** | Outbound WSS Connection Established | Google Cloud API & Spring Client | ⚙️ **AUTOMATIC** | Triggers `GoogleBidiWebSocketHandler.afterConnectionEstablished`. |
+| **8** | Candidate Speaks (`ws.send(pcm)`) | Browser Web Audio API | ⚙️ **AUTOMATIC (ScriptProcessor)** | Streams 16kHz binary PCM audio bytes over Socket 1 to backend. |
+| **9** | `VoiceSyncWSHandler.handleBinaryMessage` | Tomcat invoking Custom Java | 🛠️ **MANUAL (Written by us)** | Forwards audio bytes to `aiVoiceAdapter.sendClientAudio(...)`. |
+| **10** | Google AI Returns Response | Google Cloud WSS Engine | ⚙️ **AUTOMATIC WSS Stream** | Transmits `serverContent` text JSON frame over Socket 2. |
+| **11** | `GoogleBidiWebSocketHandler.handleTextMessage` | Spring Client invoking Custom Java | 🛠️ **MANUAL (Written by us)** | Invokes `processGooglePayload(...)` to parse JSON & decode Base64 PCM. |
+| **12** | `activeClient.sendMessage(new BinaryMessage(pcm))` | Tomcat / Spring Socket Engine | 🛠️ **MANUAL Call to Engine** | Pushes decoded 24kHz speaker audio bytes over Socket 1 to browser. |
+

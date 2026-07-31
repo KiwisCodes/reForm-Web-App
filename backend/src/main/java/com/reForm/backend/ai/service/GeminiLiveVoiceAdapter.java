@@ -61,13 +61,10 @@ public class GeminiLiveVoiceAdapter implements IAiVoiceAdapter {
 
     /**
      * HELPER METHOD: WRAP SESSION IN THREAD-SAFE DECORATOR
-     * Ensures every socket has a thread-safe LinkedBlockingQueue buffer (10MB) to prevent write collisions.
+     * Delegates to WebSocketSessionUtils to ensure thread-safe LinkedBlockingQueue buffers.
      */
     public static WebSocketSession wrapSafeSession(WebSocketSession session) {
-        if (session instanceof ConcurrentWebSocketSessionDecorator) {
-            return session;
-        }
-        return new ConcurrentWebSocketSessionDecorator(session, SEND_TIMEOUT_MS, BUFFER_10MB);
+        return com.reForm.backend.ai.websocket.WebSocketSessionUtils.wrapSafeSession(session);
     }
 
     @Override

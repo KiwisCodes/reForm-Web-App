@@ -81,7 +81,7 @@ public class VoiceSyncWSHandler extends BinaryWebSocketHandler {
         MDC.put("sessionId", userId);
         try {
             // Step 2: Wrap session in ConcurrentWebSocketSessionDecorator for Tomcat thread-safety (10MB buffer limit)
-            WebSocketSession safeSession = com.reForm.backend.ai.service.GeminiLiveVoiceAdapter.wrapSafeSession(session);
+            WebSocketSession safeSession = WebSocketSessionUtils.wrapSafeSession(session);
             activeSessions.put(userId, safeSession);
 
             // Step 3: Register distributed online presence in Redis (writes "session:{userId}" hash with 2h TTL)
