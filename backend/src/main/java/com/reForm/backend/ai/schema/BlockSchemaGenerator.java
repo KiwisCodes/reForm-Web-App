@@ -49,6 +49,26 @@ public class BlockSchemaGenerator {
         return buildObjectSchema(ConversationalBlock.class, null, null, dialect);
     }
 
+    // Constrains a whole-form/whole-turn response to "an array where each element matches any one
+    // of the known block schemas" — what AiBlockApplicationService.updateFormFromAiBlocks actually
+    // needs (a List<AiBlockDto> that can mix types), and what FormChatPromptBuilder's system
+    // instruction already promises Gemini ("decide the complete revised set of blocks").
+    // Uses anyOf, not oneOf: Gemini's responseSchema doesn't support oneOf at all, and whether an
+    // array's items can even use anyOf across different object shapes wasn't documented anywhere —
+    // confirmed empirically against the real API first (see
+    // ArrayAnyOfSchemaExplorationTest / week3/mode2 docs) before writing this method around it.
+    // Composed from the existing per-type methods rather than re-walking StaticBlock's
+    // @JsonSubTypes registry itself, so a new block type needs zero changes here either.
+    public Map<String, Object> generateBlocksArraySchema(SchemaDialect dialect) {
+        List<Object> variants = new ArrayList<>(generateAllStaticSchemas(dialect).values());
+        variants.add(generateConversationalSchema(dialect));
+
+        return Map.of(
+                "type", dialect.arrayType(),
+                "items", Map.of("anyOf", variants)
+        );
+    }
+
     private Class<? extends AbstractBlock> resolveStaticSubtype(String staticType) {
         for (JsonSubTypes.Type t : StaticBlock.class.getAnnotation(JsonSubTypes.class).value()) {
             if (t.name().equals(staticType)) {

@@ -140,16 +140,18 @@ path — never from anything AI-generated.
 *"What instructions do we even give Gemini — its role, its behavior, what it's allowed to do?"*
 
 ### ⚠️ The Conflict:
-The teammate's existing pattern for this, `SessionContextService.compileSystemInstruction(userId,
-role, formId)`, is a single concrete method (currently a `TODO` stub) reading from a
-not-yet-built `FormAgentConfig` entity — designed around voice-mode's persona/goals concept, not
-around schema-constrained structured output.
+The teammate's existing pattern for this, `SessionContextService.compileSystemInstruction(Role,
+FormAiAgentProfile, ConversationalBlock)`, is now a real, working method (no longer a stub) — a
+3-tier priority chain resolving persona text for voice mode. It has no concept of conversation
+history, the current form's existing blocks (which Mode 2 needs as context), or schema-constrained
+output — it solves a narrower problem than a full Mode 2 chat turn needs.
 
 ### 💡 The Solution:
-Introduce `IPromptBuilder` as a new port, matching the existing port/strategy convention
-(`IAiModelProviderStrategy`, `IAiVoiceAdapter`). `SessionContextService.compileSystemInstruction`
-should eventually delegate to it for the text-chat case, rather than the codebase ending up with
-two separate, competing "how do prompts get built" stories.
+Introduce `FormChatPromptBuilder` — a plain concrete class, not a formal port/interface, since
+there's only one real implementation and the interface wouldn't earn its keep yet.
+`SessionContextService.compileSystemInstruction` should delegate to it for the text-chat case,
+rather than the codebase ending up with two separate, competing "how do prompts get built"
+stories.
 
 ## 10. Sub-Problem: Which Model, and How Do We Actually Call It?
 
@@ -245,8 +247,9 @@ Root: How do I let a user build a form by chatting with AI?
 ├─ 8. Who decides the workspace/owner? → Always the authenticated caller, never AI content
 │  (AiFormDto has no workspaceId/creatorId field, by design).
 │
-├─ 9. Who decides what to tell Gemini? → New IPromptBuilder port, matching the existing
-│  port/strategy convention; SessionContextService should delegate to it.
+├─ 9. Who decides what to tell Gemini? → New FormChatPromptBuilder, a plain class (not a formal
+│  port — one implementation doesn't earn that); SessionContextService.compileSystemInstruction
+│  delegates to it for the text-chat case.
 │
 ├─ 10. Which model, which HTTP mechanism? → Reuse IAiModelProviderStrategy/Gemini35FlashModelStrategy;
 │  call via Spring WebClient (already a dependency).

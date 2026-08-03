@@ -85,4 +85,19 @@ class BlockSchemaGeneratorTest {
         assertEquals("ARRAY", ((Map<String, Object>) geminiProps.get("options")).get("type"));
         assertEquals("array", ((Map<String, Object>) jsonSchemaProps.get("options")).get("type"));
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void blocksArraySchemaCombinesAllStaticLeavesAndConversationalViaAnyOf() {
+        Map<String, Object> schema = generator.generateBlocksArraySchema(SchemaDialect.GEMINI);
+
+        assertEquals("ARRAY", schema.get("type"));
+
+        Map<String, Object> items = (Map<String, Object>) schema.get("items");
+        List<Object> variants = (List<Object>) items.get("anyOf");
+
+        // 11 static leaves + 1 conversational block, composed from the existing per-type methods
+        // rather than a second hardcoded count.
+        assertEquals(12, variants.size());
+    }
 }

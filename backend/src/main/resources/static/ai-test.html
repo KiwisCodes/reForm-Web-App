@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AI Schema Test Harness</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+  label { display: block; margin-top: 1rem; font-weight: 600; }
+  select, textarea, button { width: 100%; font-size: 1rem; padding: 0.5rem; box-sizing: border-box; }
+  textarea { font-family: ui-monospace, monospace; }
+  button { margin-top: 1rem; cursor: pointer; }
+  pre { background: #f4f4f4; padding: 1rem; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+  h2 { margin-top: 2rem; }
+  .status { margin-top: 0.5rem; color: #666; }
+</style>
+</head>
+<body>
+<h1>AI Schema Test Harness (throwaway, Mode 2 verification)</h1>
+<p>Calls real Gemini with a <code>BlockSchemaGenerator</code>-produced <code>responseSchema</code>. Shows the schema sent and Gemini's raw response, untouched — before either gets wired into <code>AiResponseParser</code>.</p>
+
+<label for="staticType">Block type (staticType)</label>
+<select id="staticType">
+  <option>SHORT_TEXT</option>
+  <option>LONG_TEXT</option>
+  <option>EMAIL</option>
+  <option>PHONE</option>
+  <option>URL</option>
+  <option selected>CHOICE</option>
+  <option>RATING_STARS</option>
+  <option>RATING_NUMBERS</option>
+  <option>OPINION_SCALE</option>
+  <option>DATE_TIME</option>
+  <option>FILE_UPLOAD</option>
+</select>
+
+<label for="message">Your message</label>
+<textarea id="message" rows="3">Add a dropdown asking for the user's favorite color, with options Red, Blue, Green.</textarea>
+
+<button id="send">Send to Gemini</button>
+<p class="status" id="status"></p>
+
+<h2>Schema sent</h2>
+<pre id="schemaOut">(nothing yet)</pre>
+
+<h2>Full request body sent</h2>
+<pre id="requestOut">(nothing yet)</pre>
+
+<h2>Raw Gemini response</h2>
+<pre id="responseOut">(nothing yet)</pre>
+
+<h2>Extracted generated text (candidates[0].content.parts[0].text)</h2>
+<pre id="extractedOut">(nothing yet)</pre>
+
+<script>
+document.getElementById('send').addEventListener('click', async () => {
+  const staticType = document.getElementById('staticType').value;
+  const message = document.getElementById('message').value;
+  const status = document.getElementById('status');
+  const schemaOut = document.getElementById('schemaOut');
+  const requestOut = document.getElementById('requestOut');
+  const responseOut = document.getElementById('responseOut');
+  const extractedOut = document.getElementById('extractedOut');
+
+  status.textContent = 'Sending...';
+  schemaOut.textContent = requestOut.textContent = responseOut.textContent = extractedOut.textContent = '(pending)';
+
+  try {
+    const res = await fetch('/api/v1/ai/test/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ staticType, message })
+    });
+
+    const bodyText = await res.text();
+    if (!res.ok) {
+      status.textContent = 'Error: HTTP ' + res.status;
+      responseOut.textContent = bodyText;
+      return;
+    }
+
+    const data = JSON.parse(bodyText);
+    status.textContent = 'Done.';
+    schemaOut.textContent = JSON.stringify(data.schemaSent, null, 2);
+    requestOut.textContent = JSON.stringify(data.requestBodySent, null, 2);
+    responseOut.textContent = JSON.stringify(data.rawGeminiResponse, null, 2);
+
+    try {
+      const text = data.rawGeminiResponse.candidates[0].content.parts[0].text;
+      extractedOut.textContent = text;
+    } catch (e) {
+      extractedOut.textContent = '(could not extract — see raw response above for actual shape)';
+    }
+  } catch (err) {
+    status.textContent = 'Request failed: ' + err.message;
+  }
+});
+</script>
+</body>
+</html>

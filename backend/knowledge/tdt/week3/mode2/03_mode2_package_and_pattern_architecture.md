@@ -17,9 +17,14 @@ com.reForm.backend.ai
 │   └── AiChatService                                                                     [NEW — Mode 2 orchestrator]
 ├── port/
 │   ├── IAiModelProviderStrategy, IAiVoiceAdapter                                        [pth, existing]
-│   └── IPromptBuilder                                                                    [NEW]
+│   └── IAiChatClient                                                                     [NEW — formalized from the start,
+│                                                                                            unlike FormChatPromptBuilder]
+├── prompt/
+│   └── FormChatPromptBuilder                                                             [NEW — plain class, no interface;
+│                                                                                            SessionContextService delegates
+│                                                                                            to it for the text-chat case]
 ├── client/
-│   └── GeminiChatClient                                                                  [NEW]
+│   └── GeminiChatClient                                                                  [NEW — implements IAiChatClient]
 ├── session/
 │   └── ChatSessionStore, ChatTurn                                                        [NEW]
 ├── strategy/         Gemini31LiveModelStrategy, Gemini35FlashModelStrategy               [pth, existing]
@@ -34,15 +39,16 @@ com.reForm.backend.ai
 `submission.*` need, without either of those importing from the other — the same rationale
 `12_ai_design_patterns_and_package_architecture.md` gives for the package existing at all. Mode 2's
 new pieces slot into the existing subpackage-per-responsibility convention rather than inventing a
-parallel structure: `port/` for new interfaces (matching where `IAiModelProviderStrategy` already
-lives), `service/` for the new orchestrator (alongside the existing session/voice services, even
-though — worth noting explicitly — `AiChatService` is a *use-case/orchestration* layer calling into
-`form.*`, while `SessionContextService`/`GeminiLiveVoiceAdapter` are lower-level
+parallel structure: `service/` for the new orchestrator (alongside the existing session/voice
+services, even though — worth noting explicitly — `AiChatService` is a *use-case/orchestration*
+layer calling into `form.*`, while `SessionContextService`/`GeminiLiveVoiceAdapter` are lower-level
 session/protocol-plumbing; same package, different responsibility tier, which is fine but worth
-remembering if this package grows further). `client/` and `session/` are new subpackages
-specifically because nothing existing already covers "make an outbound HTTP call to Gemini for
-text" or "store/retrieve chat history" — reusing `service/` for those would blur what's
-orchestration versus what's low-level plumbing.
+remembering if this package grows further). `client/`, `session/`, and `prompt/` are new
+subpackages specifically because nothing existing already covers "make an outbound HTTP call to
+Gemini for text," "store/retrieve chat history," or "assemble a text-chat prompt" — reusing
+`service/` for those would blur what's orchestration versus what's low-level plumbing, and keeping
+`FormChatPromptBuilder` in its own package (rather than inside `SessionContextService`'s own file)
+avoids editing a teammate's actively-evolving class directly, per the mental model doc §9.
 
 ## 2. The Design Patterns in Play
 
@@ -52,12 +58,21 @@ orchestration versus what's low-level plumbing.
 2. **Strategy** (`IAiModelProviderStrategy` → `Gemini35FlashModelStrategy`) — reused, not
    reinvented, for Mode 2's model selection. Matches pth's existing pattern exactly: `AiChatService`
    asks for "the text-mode strategy" and never branches on model name itself.
-3. **Port/Adapter** (new `IPromptBuilder` → `FormChatPromptBuilder`) — same shape as
-   `IAiVoiceAdapter`'s bridge between `VoiceSyncWSHandler` and concrete voice vendors: an interface
-   decouples "something needs a prompt built" from "here's exactly how one gets built," so a
-   second implementation (e.g. a different prompting strategy per form category) could exist later
-   without touching callers.
-4. **Single Responsibility** — each new class does exactly one job: `ChatSessionStore` only
+3. **Delegation, not Port/Adapter, for prompt-building** (`SessionContextService` →
+   `FormChatPromptBuilder`) — deliberately *not* a formal interface: `FormChatPromptBuilder` is a
+   plain concrete class, and `SessionContextService.compileSystemInstruction` delegates to it for
+   the text-chat case. One real implementation doesn't earn an interface's ceremony yet; if a
+   second prompting strategy ever appears, that's the point to introduce a port, not before.
+4. **Port/Adapter, formalized immediately, for the vendor call** (`IAiChatClient` →
+   `GeminiChatClient`) — the opposite call from #3, made deliberately: even though `GeminiChatClient`
+   also starts with exactly one implementation, it's placed behind a port from day one because
+   scalability to other vendors is an explicit priority here, unlike prompt-building. Mirrors
+   `IAiVoiceAdapter`'s exact shape — decouples "something needs to send a prompt and get text back"
+   from "here's exactly how one vendor's wire protocol works," the same way `IAiVoiceAdapter`
+   decouples `VoiceSyncWSHandler` from Gemini's specific Bidi protocol. `BlockSchemaGenerator`'s
+   existing `SchemaDialect` (already vendor-parameterized, built this session before this decision)
+   is a second, independent point of readiness for the same goal.
+5. **Single Responsibility** — each new class does exactly one job: `ChatSessionStore` only
    persists/retrieves history, `GeminiChatClient` only makes the HTTP call, `AiChatService` only
    orchestrates, `AiChatController` only translates HTTP ↔ the orchestrator. None of these absorb
    a neighboring concern, mirroring the discipline already used for `BlockFactory` vs.
@@ -74,13 +89,13 @@ would.
 **B. Modifiability.**
 
 *Adding a new AI vendor (e.g. OpenAI) for Mode 2:* Create one new class implementing
-`IAiModelProviderStrategy` (mirroring `Gemini35FlashModelStrategy`), and — since
-`BlockSchemaGenerator` already supports a `JSON_SCHEMA` dialect alongside `GEMINI` — no changes
-needed to schema generation. `GeminiChatClient` would need generalizing into an
-`IAiChatClient` port with a vendor-specific implementation, the same Bridge/Adapter shape
-`IAiVoiceAdapter` already uses for voice vendors. Zero changes required to `AiResponseParser`,
-`BlockFactory`, `FormFactory`, or `AiBlockApplicationService` — none of them know or care which
-vendor produced the JSON they're processing.
+`IAiModelProviderStrategy` (mirroring `Gemini35FlashModelStrategy`) and one new class implementing
+`IAiChatClient` (mirroring `GeminiChatClient`) — since `BlockSchemaGenerator` already supports a
+`JSON_SCHEMA` dialect alongside `GEMINI`, no changes needed to schema generation either. Because
+`IAiChatClient` was formalized from the start rather than generalized later, this is a pure
+addition — no existing class needs restructuring first. Zero changes required to
+`AiResponseParser`, `BlockFactory`, `FormFactory`, or `AiBlockApplicationService` — none of them
+know or care which vendor produced the JSON they're processing.
 
 *Adding a new block type (e.g. a new static leaf, or a second conversational leaf):* Per
 `custom-abstractblock-deserializer-static-vs-conversational.md` and

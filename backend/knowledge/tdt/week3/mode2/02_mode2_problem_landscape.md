@@ -57,21 +57,22 @@ registration bug found this session, just pointed at an external API's contract 
 Jackson's internals. This needs verifying against Gemini's actual API docs before `GeminiChatClient`
 is built, not guessed.
 
-## D. Prompt Construction: Extend an Existing Method, or a New Port?
+## D. Prompt Construction: Extend `SessionContextService` Directly, or a New Class?
 
 ### A. Comparative Analysis Matrix
 
-| Approach | Matches existing convention | Ceremony for a single implementation | Schema-injection support |
+| Approach | Matches existing convention | Schema-injection / form-context support | Risk of touching a teammate's actively-evolving file |
 |---|---|---|---|
-| Extend `SessionContextService.compileSystemInstruction` directly | Reuses what's there | None | Would need retrofitting into a voice-shaped method |
-| New `IPromptBuilder` port + one implementation | Matches `IAiModelProviderStrategy`/`IAiVoiceAdapter` port convention | Some — one interface, one implementer, for now | Purpose-built for it |
+| Add methods directly onto `SessionContextService` | Reuses what's there as-is | Would need retrofitting into a voice-shaped class | Higher — that class's shape changed substantially in the last merge alone |
+| New `FormChatPromptBuilder`, a plain concrete class (not a formal port) | `SessionContextService` delegates to it for the text-chat case | Purpose-built for it | None — new file, own package |
 
-### B. The reForm Decision: New `IPromptBuilder` Port
+### B. The reForm Decision: New `FormChatPromptBuilder`, Plain Concrete Class
 
-Chosen for consistency with the codebase's established port pattern, even though it means one
-interface with exactly one real implementation today. `SessionContextService` should delegate to
-it for the text-chat case, so there's a single source of truth for "how do prompts get built"
-rather than two.
+Not a formal `IAiModelProviderStrategy`/`IAiVoiceAdapter`-style port — with exactly one real
+implementation, the interface wouldn't earn its keep yet, and simplicity wins here.
+`SessionContextService.compileSystemInstruction` delegates to it for the text-chat case, so
+there's a single source of truth for "how do prompts get built" rather than two competing
+stories, without requiring Mode 2's logic to live inside voice mode's own class.
 
 ## E. `FormAgentConfig`: Build Now, or Defer?
 

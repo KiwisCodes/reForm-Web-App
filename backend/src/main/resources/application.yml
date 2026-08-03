@@ -10,7 +10,7 @@ spring:
 #      write-dates-as-timestamps: false
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/${POSTGRES_DB:reform_db}
+    url: jdbc:postgresql://localhost:5332/${POSTGRES_DB:reform_db}
     username: ${POSTGRES_USER:postgres}
     password: ${POSTGRES_PASSWORD:password}
     driver-class-name: org.postgresql.Driver
