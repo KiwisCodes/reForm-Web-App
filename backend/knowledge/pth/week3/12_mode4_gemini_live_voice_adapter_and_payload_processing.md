@@ -200,8 +200,7 @@ private void decodeAndForwardPcmAudio(WebSocketSession activeClient, JsonNode se
         }
     }
 }
-
----
+```
 
 ## 6. SOLID Principles Architecture & Coupling Analysis
 
@@ -244,7 +243,7 @@ private void handleRawBinaryAudio(WebSocketSession clientSession, byte[] rawByte
 * **50-Microsecond Execution**: When `processGooglePayload` receives the frame, it sends `TextMessage("TRANSCRIPT_AI")` to Socket 1, decodes the Base64 audio into binary bytes, and immediately sends `BinaryMessage(rawPcm)` to Socket 1 in the next line of code.
 * **Perception**: Both messages execute on the CPU in **less than 0.05 milliseconds (50 microseconds)**. Because the human auditory/visual perception threshold is ~100ms, the eye and ear perceive text and sound at the exact same instant!
 
-
+```java
 private void handleBargeInInterruption(WebSocketSession activeClient, JsonNode serverContent) throws IOException {
     if (serverContent.path("interrupted").asBoolean(false)) {
         log.info("Native barge-in detected by Gemini. Sending FLUSH signal to client.");
