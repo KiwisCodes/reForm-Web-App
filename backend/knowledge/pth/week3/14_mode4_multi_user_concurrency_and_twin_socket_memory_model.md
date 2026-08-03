@@ -2,7 +2,7 @@
 
 **Document Version:** 3.0  
 **Target System:** reForm Monolith (`com.reForm.backend.ai` & Next.js Frontend)  
-**Parent Specification:** [10_mode4_implementation_retrospective_and_js_to_java_mapping.md](file:///Users/apple/Coding-projects/reForm-Web-App/backend/knowledge/pth/week3/10_mode4_implementation_retrospective_and_js_to_java_mapping.md)  
+**Parent Specification:** [10_mode4_master_syllabus_and_table_of_contents.md](file:///Users/apple/Coding-projects/reForm-Web-App/backend/knowledge/pth/week3/10_mode4_master_syllabus_and_table_of_contents.md)  
 
 ---
 
@@ -229,6 +229,54 @@ Imagine **Alice** and **Bob** speak into their microphones at the exact same mil
 5. **Per-Socket Buffer Enqueue (`ConcurrentWebSocketSessionDecorator`):**  
    If Socket 2A is currently busy writing a previous frame, the new frame is placed into Socket 2A's private `LinkedBlockingQueue` (up to `10MB` limit and `10,000ms` send timeout).
 6. **Kernel TCP Send Queue (`SO_SNDBUF`):** The OS kernel places formatted Base64 JSON packets into the OS socket send buffer queue (`SO_SNDBUF`) for transmission over the wire to Google in FIFO sequence.
+
+---
+
+### 4. Why Multi-Threaded Concurrent Write Protection is Required (`ConcurrentWebSocketSessionDecorator`)
+
+A common question is: *"If Socket 1 and Socket 2 are just streaming audio back and forth, where is the multi-threading coming from?"*
+
+In a live production environment, multiple JVM threads attempt to write to Socket 1 simultaneously:
+
+```text
+               CPU CORE 1 (Tomcat Worker Thread)
+          nio-8080-exec-1: Forwarding AI Audio Chunk to Client
+                               │
+                               ▼
+            Socket 1.sendMessage(new BinaryMessage(pcm))
+                               │
+                       [ RACE CONDITION ]  <-- CRASH! Tomcat throws IllegalStateException!
+                               ▲
+                               │
+          scheduled-task-3: Heartbeat Ping / Event Broadcast
+               CPU CORE 2 (Spring Task Scheduler)
+```
+
+#### The Race Condition Scenario:
+1. **Thread 1 (`nio-8080-exec-1`)**: Google sends an AI audio chunk over Socket 2. Tomcat's worker thread reads the frame and calls `Socket1.sendMessage(new BinaryMessage(pcmBytes))` to send 24kHz audio to the browser.
+2. **Thread 2 (`scheduled-task-3` or `FormLayoutEventListener`)**: At the **exact same millisecond**, a background thread fires a heartbeat ping (`PING`) or a Spring Event listener broadcasts a canvas layout update to Socket 1 using `Socket1.sendMessage(new TextMessage(...))`.
+
+#### The Consequence & Solution:
+* Tomcat's native socket implementation (`WsSession`) is **NOT thread-safe**. If two threads invoke `sendMessage()` concurrently on the same socket object, Tomcat throws `java.lang.IllegalStateException: TEXT_FULL_WRITING` or `BINARY_FULL_WRITING` and forcibly closes the socket connection!
+* `ConcurrentWebSocketSessionDecorator` solves this by wrapping Socket 1 with a **thread-safe mutex and a private `LinkedBlockingQueue`**. If Thread 2 tries to write while Thread 1 is active, Thread 2's message is enqueued safely and transmitted immediately after Thread 1 completes.
+
+---
+
+### 5. Mathematical Sizing Breakdown of the 10MB Buffer Limit
+
+```java
+public static final int BUFFER_10MB = 10485760; // 10,485,760 bytes = 10MB
+```
+
+1. **Why Default 8KB Fails:**  
+   Tomcat's default WebSocket buffer size is **8 KB (8,192 bytes)**. In Mode 4, setup JSON payloads (containing system prompts + 50 tool declarations) and single AI audio response chunks are **13 KB to 100 KB**. An 8KB limit causes Tomcat to throw `WebSocket Error Code 1009 ("Buffer too small")` and terminate the connection after 2 words.
+2. **Why 10MB is Optimal:**  
+   A 10MB limit provides sufficient headroom for large form setup schemas, PDF RAG document context strings, and high-bitrate PCM audio bursts without buffer truncation.
+3. **Why Not 100MB+ (OOM Protection):**  
+   If 1,000 concurrent users connect and each socket allocates a 100MB buffer, the server would require:
+   $$1,000 \text{ users} \times 100 \text{ MB} = \mathbf{100 \text{ GB of RAM}}$$
+   This would cause an immediate JVM `OutOfMemoryError` (OOM) crash. 10MB is the mathematically optimal balance between high-burst payload handling and JVM RAM safety.
+
 
 ---
 

@@ -2,7 +2,7 @@
 
 **Document Version:** 1.0  
 **Target System:** reForm Monolith (`com.reForm.backend.ai` & Next.js Frontend)  
-**Parent Specification:** [10_mode4_implementation_retrospective_and_js_to_java_mapping.md](file:///Users/apple/Coding-projects/reForm-Web-App/backend/knowledge/pth/week3/10_mode4_implementation_retrospective_and_js_to_java_mapping.md)  
+**Parent Specification:** [10_mode4_master_syllabus_and_table_of_contents.md](file:///Users/apple/Coding-projects/reForm-Web-App/backend/knowledge/pth/week3/10_mode4_master_syllabus_and_table_of_contents.md)  
 
 ---
 
@@ -145,3 +145,46 @@ WebSocket handshake endpoints must be permitted at the Spring Security filter ch
     .anyRequest().authenticated()
 )
 ```
+
+---
+
+## 4. Spring `WebSocketSession` Deep Dive & Class Knowledge Framework
+
+### 1. Systematic 4-Question Framework for `WebSocketSession`
+
+#### (1) Problem that led to its invention:
+Raw Java TCP Sockets (`java.net.Socket`) require manual HTTP handshake parsing, framing byte bitmasks, and low-level buffer management. Different application servers (Tomcat, Jetty, Undertow) use different internal socket objects (`WsSession`, `JettyWebSocketSession`).
+
+#### (2) Historical Progression:
+Low-level TCP Sockets (1995) $\rightarrow$ Servlet HTTP Long-Polling (2005) $\rightarrow$ Native Java EE JSR-356 `javax.websocket.Session` (2013) $\rightarrow$ Spring `WebSocketSession` abstraction (2014).
+
+#### (3) How to use it & Receiving Mechanics (IoC Callback Model):
+* **No Direct `.receive()` Method**: `WebSocketSession` does **NOT** have a `.receive()` or `.read()` method. WebSockets use an **Inversion of Control (IoC) Event-Driven Callback Model**.
+* **Tomcat Event Callbacks**: When the client browser sends a frame, Tomcat intercepts the TCP packets and automatically invokes your registered `WebSocketHandler` callbacks:
+  - `@Override handleTextMessage(session, message)` for JSON text frames.
+  - `@Override handleBinaryMessage(session, message)` for binary audio frames.
+* **Session Handle**: Tomcat passes the specific `session` instance into the callback as the first argument, representing **WHO** sent the frame and allowing responses via `session.sendMessage(...)`.
+* **State & Attribute Access**:
+  - Retrieve attributes: `session.getAttributes().get("userId")`
+  - Check state: `session.isOpen()`
+  - Send message: `session.sendMessage(new TextMessage(...))` or `session.sendMessage(new BinaryMessage(...))`
+  - Close socket: `session.close(CloseStatus.NORMAL)`
+
+#### (4) When to use it:
+Always use `WebSocketSession` whenever you need to inspect attributes, verify connection state, or transmit frames over an active WebSocket connection in Spring Boot.
+
+---
+
+### 2. Lifespan Attributes Map (`session.getAttributes()`)
+
+Attributes populated during handshake remain attached to `WebSocketSession` for its entire lifetime:
+
+| Attribute Key | Java Type | Populated By | Purpose |
+| :--- | :--- | :--- | :--- |
+| `"userId"` | `String` (e.g. `"user_123"`) | `JwtHandshakeInterceptor` | User identifier |
+| `"role"` | `Role` (e.g. `FORM_BUILDER`) | `JwtHandshakeInterceptor` | Role-based authorization |
+| `"formId"` | `String` (e.g. `"form_99"`) | `JwtHandshakeInterceptor` | Canvas form UUID |
+| `"mode"` | `String` (`"MODE_3"`/`"MODE_4"`) | `JwtHandshakeInterceptor` | Selected voice mode strategy |
+| `"safeClientSession"` | `ConcurrentWebSocketSessionDecorator` | `VoiceSyncWSHandler` | Socket 1 (Inbound client socket) |
+| `"geminiSession"` | `ConcurrentWebSocketSessionDecorator` | `GeminiLiveVoiceAdapter` | Socket 2 (Outbound WSS socket) |
+

@@ -2,7 +2,7 @@
 
 **Document Version:** 2.0  
 **Target System:** reForm Monolith (`com.reForm.backend.ai` & Next.js Frontend)  
-**Parent Specification:** [10_mode4_implementation_retrospective_and_js_to_java_mapping.md](file:///Users/apple/Coding-projects/reForm-Web-App/backend/knowledge/pth/week3/10_mode4_implementation_retrospective_and_js_to_java_mapping.md)  
+**Parent Specification:** [10_mode4_master_syllabus_and_table_of_contents.md](file:///Users/apple/Coding-projects/reForm-Web-App/backend/knowledge/pth/week3/10_mode4_master_syllabus_and_table_of_contents.md)  
 
 ---
 
@@ -304,3 +304,26 @@ In **Phase B**, Candidate (Sarah) takes an interactive voice interview based on 
 6. **Evaluation & Scoring Agent (Post-Session Summary)**:
    - Triggered asynchronously via `@Async` upon socket disconnection.
    - Takes full transcript, prompts Gemini 2.5/3.6 Flash, computes candidate match score (e.g., `92/100`), generates a 1-page summary, and saves a `Submission` entity record.
+
+---
+
+## 6. Jackson & Spring Framework Class Knowledge Framework
+
+### 1. `ObjectMapper` (`tools.jackson.databind.ObjectMapper`)
+* **Problem leading to invention**: In early Java web development, programmers constructed JSON using fragile string concatenation (`"{\"key\":\"" + value + "\"}"`) and parsed text using regex.
+* **Historical Progression**: Manual String Concatenation $\rightarrow$ Org.json simple parser $\rightarrow$ Jackson 1.x / Gson (2009) $\rightarrow$ Jackson 2.x / Jackson 3 (`tools.jackson`) high-speed streaming AST engine.
+* **How to use**: `mapper.writeValueAsString(obj)` for serialization, `mapper.readValue(json, Class)` for deserialization, `mapper.readTree(json)` for AST tree parsing.
+* **When to use**: Use for all JSON transformations and DTO schema mappings in Spring Boot.
+
+### 2. `StandardWebSocketClient` (`org.springframework.web.socket.client.standard.StandardWebSocketClient`)
+* **Problem leading to invention**: Browsers initiate WebSocket connections natively using `new WebSocket()`. Java backend servers required a standard way to open outbound WebSocket tunnels to external AI clouds.
+* **Historical Progression**: Raw HTTP/TCP socket clients $\rightarrow$ Java 11 `HttpClient` WebSocket $\rightarrow$ Spring `StandardWebSocketClient` (standardizes JSR-356 container implementations).
+* **How to use**: Instantiate `new StandardWebSocketClient(container)`, then execute `client.execute(handler, googleWssUrl)`.
+* **When to use**: Use whenever your backend acts as a client initiating an outbound WSS connection to external services (e.g. Google Gemini Live, Deepgram, Cartesia).
+
+### 3. `AbstractWebSocketHandler` (`org.springframework.web.socket.handler.AbstractWebSocketHandler`)
+* **Problem leading to invention**: Implementing Spring's `WebSocketHandler` interface directly forces writing empty boilerplate methods for unused callbacks.
+* **Historical Progression**: Direct interface implementation $\rightarrow$ Adapter Pattern `AbstractWebSocketHandler` providing default empty hooks.
+* **How to use**: Extend `AbstractWebSocketHandler` and `@Override` only `handleTextMessage`, `handleBinaryMessage`, or `afterConnectionEstablished`.
+* **When to use**: Use whenever building custom WebSocket message receivers in Spring.
+

@@ -2,6 +2,7 @@ package com.reForm.backend.ai.service;
 
 import com.reForm.backend.ai.event.FormLayoutModificationEvent;
 import com.reForm.backend.ai.port.IAiVoiceAdapter;
+import com.reForm.backend.ai.websocket.WebSocketSessionUtils;
 import com.reForm.backend.user.entity.Role;
 import jakarta.websocket.ContainerProvider;
 import jakarta.websocket.WebSocketContainer;
@@ -49,8 +50,8 @@ import java.util.Map;
 public class GeminiLiveVoiceAdapter implements IAiVoiceAdapter {
 
     // Centralized 10MB buffer limit and 10s write timeout for all WebSocket sessions
-    public static final int BUFFER_10MB = 10485760; // 10MB (10 * 1024 * 1024 bytes)
-    public static final int SEND_TIMEOUT_MS = 10000;  // 10 second send timeout
+    public static final int BUFFER_10MB = WebSocketSessionUtils.BUFFER_10MB;
+    public static final int SEND_TIMEOUT_MS = WebSocketSessionUtils.SEND_TIMEOUT_MS;
 
     private final SessionContextService sessionContextService;
     private final ApplicationEventPublisher eventPublisher;
@@ -59,20 +60,9 @@ public class GeminiLiveVoiceAdapter implements IAiVoiceAdapter {
     @Value("${gemini.api.key:DEFAULT_PLATFORM_KEY}")
     private String platformApiKey;
 
-    /**
-     * HELPER METHOD: WRAP SESSION IN THREAD-SAFE DECORATOR
-     * Ensures every socket has a thread-safe LinkedBlockingQueue buffer (10MB) to prevent write collisions.
-     */
-    public static WebSocketSession wrapSafeSession(WebSocketSession session) {
-        if (session instanceof ConcurrentWebSocketSessionDecorator) {
-            return session;
-        }
-        return new ConcurrentWebSocketSessionDecorator(session, SEND_TIMEOUT_MS, BUFFER_10MB);
-    }
-
     @Override
     public void startSession(String userId, WebSocketSession clientSession) {
-        WebSocketSession safeClientSession = wrapSafeSession(clientSession);
+        WebSocketSession safeClientSession = WebSocketSessionUtils.wrapSafeSession(clientSession);
         clientSession.getAttributes().put("safeClientSession", safeClientSession);
 
         Role role = (Role) clientSession.getAttributes().get("role");
@@ -119,7 +109,7 @@ public class GeminiLiveVoiceAdapter implements IAiVoiceAdapter {
             log.info("Outbound WebSocket connection to Google Gemini Live established for user: {}", userId);
             
             // Wrap outbound geminiSession in ConcurrentWebSocketSessionDecorator
-            WebSocketSession safeGeminiSession = wrapSafeSession(session);
+            WebSocketSession safeGeminiSession = WebSocketSessionUtils.wrapSafeSession(session);
             clientSession.getAttributes().put("geminiSession", safeGeminiSession);
 
             // Build setup context payload and send setup JSON frame to Google
@@ -345,7 +335,7 @@ public class GeminiLiveVoiceAdapter implements IAiVoiceAdapter {
      * SUB-HELPER: SEND TOOL RESPONSE FRAME BACK TO GOOGLE WSS
      */
     private void sendToolResponseFrame(WebSocketSession geminiSession, List<Map<String, Object>> functionResponses) throws IOException {
-        WebSocketSession activeGemini = wrapSafeSession(geminiSession);
+        WebSocketSession activeGemini = WebSocketSessionUtils.wrapSafeSession(geminiSession);
         if (activeGemini.isOpen()) {
             Map<String, Object> toolResponseFrame = Map.of(
                 "toolResponse", Map.of("functionResponses", functionResponses)

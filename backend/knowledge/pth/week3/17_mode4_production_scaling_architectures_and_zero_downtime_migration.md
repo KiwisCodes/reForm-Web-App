@@ -2,7 +2,7 @@
 
 **Document Version:** 3.0  
 **Target System:** reForm Monolith (`com.reForm.backend.ai` & Next.js Frontend)  
-**Parent Specification:** [10_mode4_implementation_retrospective_and_js_to_java_mapping.md](file:///Users/apple/Coding-projects/reForm-Web-App/backend/knowledge/pth/week3/10_mode4_implementation_retrospective_and_js_to_java_mapping.md)  
+**Parent Specification:** [10_mode4_master_syllabus_and_table_of_contents.md](file:///Users/apple/Coding-projects/reForm-Web-App/backend/knowledge/pth/week3/10_mode4_master_syllabus_and_table_of_contents.md)  
 
 ---
 
@@ -35,17 +35,13 @@ graph TD
     TomcatContainer -->|3. Enforces 10MB Limit| SocketC[User C Socket Connection]
 ```
 
-### Detailed Breakdown (4 Key Questions)
+### Class Knowledge Framework: `ServletServerContainerFactoryBean`
 
-1. **Who owns the container?**  
-   **Tomcat** owns the underlying WebSocket container (`org.apache.tomcat.websocket.server.WsServerContainer`). Tomcat is the embedded Java HTTP/WebSocket server running inside Spring Boot.
-2. **What is `ServletServerContainerFactoryBean`?**  
-   It is a **Spring configuration helper bean**. When Spring Boot starts up, it creates this bean and uses it to customize Tomcat's global `WsServerContainer` properties.
-3. **When is it used in the lifecycle?**  
-   - **Startup Time**: Spring Boot registers this bean during container initialization before Tomcat accepts connections.
-   - **Runtime Connection Lifecycle**: Every time a WebSocket frame is sent or received, Tomcat checks the frame size against `maxTextMessageBufferSize` and `maxBinaryMessageBufferSize`.
-4. **Why was it necessary for Mode 4?**  
-   Tomcat's default buffer limit is **8KB (8,192 bytes)**. Google Gemini Live audio JSON response frames are **13KB to 100KB**. Without setting `10485760` (10MB), Tomcat threw **WebSocket Error Code 1009 ("Buffer too small")** and crashed the connection after 2 words.
+* **(1) Problem that led to its invention**: Default Tomcat WebSocket buffer size is **8 KB (8,192 bytes)**. Transmitting high-resolution PCM audio frames or large form tool definitions routinely exceeds 8KB, causing Tomcat to throw `WebSocket Error Code 1009 ("Buffer too small")` and terminate the connection.
+* **(2) Historical Progression**: Manual `web.xml` Tomcat XML configs $\rightarrow$ Programmatic `WsServerContainer` ServletContext attributes $\rightarrow$ Spring `@Bean` `ServletServerContainerFactoryBean`.
+* **(3) How to use it**: Declare as a `@Bean` in `WebSocketConfig.java` and set `.setMaxTextMessageBufferSize(10485760)` and `.setMaxBinaryMessageBufferSize(10485760)`.
+* **(4) When to use it**: Use in any Spring Boot WebSockets application that handles binary media streaming or large JSON payload structures.
+
 
 ---
 
