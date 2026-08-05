@@ -59,3 +59,12 @@ app:
 gemini:
   api:
     key: ${GEMINI_API_KEY}
+
+deepgram:
+  api:
+    key: ${DEEPGRAM_API_KEY:DEFAULT_DEEPGRAM_KEY}
+
+cartesia:
+  api:
+    key: ${CARTESIA_API_KEY:DEFAULT_CARTESIA_KEY}
+
