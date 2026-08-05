@@ -30,6 +30,7 @@ public class GeminiFlashRestService {
 
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
+    private final com.reForm.backend.ai.strategy.Gemini36FlashModelStrategy modelStrategy;
 
     @Value("${gemini.api.key:DEFAULT_PLATFORM_KEY}")
     private String geminiApiKey;
@@ -43,7 +44,9 @@ public class GeminiFlashRestService {
      * @return Reactive Mono containing response JsonNode
      */
     public Mono<JsonNode> callGemini(String systemPrompt, String userTranscript, List<Map<String, Object>> tools) {
-        String url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=" + geminiApiKey;
+        String modelId = modelStrategy.getModelId();
+        String url = "https://generativelanguage.googleapis.com/v1beta/" + modelId + ":generateContent?key=" + geminiApiKey;
+
 
         Map<String, Object> requestBody = new HashMap<>();
         if (systemPrompt != null && !systemPrompt.isBlank()) {

@@ -67,3 +67,13 @@ deepgram:
 cartesia:
   api:
     key: ${CARTESIA_API_KEY:DEFAULT_CARTESIA_KEY}
+
+voice:
+  stt:
+    default-strategy: DEEPGRAM_NOVA_3
+    sample-rate: 16000
+    channels: 1
+    utterance-end-ms: 1000
+  tts:
+    default-strategy: CARTESIA_SONIC_3_5
+    default-voice-id: a0e99841-438c-4a64-b679-ae501e7d6091

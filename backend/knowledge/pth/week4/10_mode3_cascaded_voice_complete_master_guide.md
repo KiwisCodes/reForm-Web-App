@@ -1,15 +1,15 @@
-# Mode 3 Cascaded Voice Architecture — Dark Mode & Theme-Adaptive Master Guide
+# Mode 3 Cascaded Voice Architecture — Complete Master Guide & Architectural QA Record
 
 ## 1. Overview & Architecture Strategy
 
 **Mode 3 (Cascaded Voice Pipeline)** implements a 3-stage, multi-vendor voice streaming architecture:
-1. **Speech-to-Text (STT)**: Deepgram Nova-3 over outbound WebSocket (`wss://api.deepgram.com`) (~100ms transcript latency + real-time VAD speech start detection for barge-in).
+1. **Speech-to-Text (STT Strategy)**: `ISttProviderStrategy` (`DeepgramNova3SttStrategy`) over outbound WebSocket (`wss://api.deepgram.com`) (~100ms transcript latency + real-time VAD speech start detection for barge-in).
 2. **LLM Reasoning**: Google Gemini 3.6 Flash over non-blocking HTTP REST (`GeminiFlashRestService.java`) (~350ms reasoning latency + 18 function calling tool declarations).
-3. **Text-to-Speech (TTS)**: Cartesia Sonic 3.5 over outbound WebSocket (`wss://api.cartesia.ai`) (~150ms 24kHz PCM audio synthesis).
+3. **Text-to-Speech (TTS Strategy)**: `ITtsProviderStrategy` (`CartesiaSonic35TtsStrategy`) over outbound WebSocket (`wss://api.cartesia.ai`) (~150ms 24kHz PCM audio synthesis).
 
 ---
 
-## 2. Master System Component Architecture Diagram (Dark/Light Adaptive)
+## 2. Master System Component Architecture Diagram (Strategy Pattern & Dark Mode Native)
 
 ```mermaid
 graph TD
@@ -23,10 +23,16 @@ graph TD
         Factory["AiVoiceAdapterFactory<br/>(Strategy Resolution)"]
     end
 
-    subgraph Mode3 ["Mode 3 Strategy: CascadedVoiceAdapter"]
+    subgraph Mode3 ["Mode 3 Core: CascadedVoiceAdapter"]
         Adapter["CascadedVoiceAdapter<br/>(Core Pipeline Orchestrator)"]
         DeepgramInner["DeepgramSttHandler<br/>(Socket 2: Outbound WSS)"]
         CartesiaInner["CartesiaTtsHandler<br/>(Socket 3: Outbound WSS)"]
+    end
+
+    subgraph StrategyRegistry ["Strategy Pattern Registries"]
+        SttStrategy["ISttProviderStrategy<br/>• DeepgramNova3SttStrategy<br/>• DeepgramNova2SttStrategy"]
+        TtsStrategy["ITtsProviderStrategy<br/>• CartesiaSonic35TtsStrategy<br/>• CartesiaSonicMultiTtsStrategy"]
+        LlmStrategy["IAiModelProviderStrategy<br/>• Gemini36FlashModelStrategy"]
     end
 
     subgraph InternalServices ["Internal Monolith Services"]
@@ -49,6 +55,8 @@ graph TD
     Adapter --> SessionCtx
     SessionCtx <--> DB
 
+    Adapter -->|"Resolve Strategy"| SttStrategy
+    Adapter -->|"Resolve Strategy"| TtsStrategy
     Adapter -->|"Init Socket 2"| DeepgramInner
     DeepgramInner <==>|"Socket 2 (Outbound WSS)"| DeepgramCloud
 
@@ -56,6 +64,7 @@ graph TD
     CartesiaInner <==>|"Socket 3 (Outbound WSS)"| CartesiaCloud
 
     DeepgramInner -->|"Final Transcript"| GeminiRest
+    GeminiRest -->|"Resolve Strategy"| LlmStrategy
     GeminiRest <==>|"Stateless HTTP REST"| GeminiCloud
     GeminiRest -->|"Text Response"| CartesiaInner
     GeminiRest -->|"Tool Call"| ToolRegistry
@@ -63,13 +72,14 @@ graph TD
     style Client fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#e0e7ff;
     style Gateway fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#d1fae5;
     style Mode3 fill:#78350f,stroke:#fbbf24,stroke-width:2px,color:#fef3c7;
+    style StrategyRegistry fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#f0f9ff;
     style InternalServices fill:#3b0764,stroke:#c084fc,stroke-width:2px,color:#f3e8ff;
     style Vendors fill:#831843,stroke:#f472b6,stroke-width:2px,color:#fce7f3;
 ```
 
 ---
 
-## 3. Ultra-Detailed Sequence Diagram (Dark Mode Native Contrast)
+## 3. Ultra-Detailed Sequence Diagram (Dark Mode Native)
 
 ```mermaid
 sequenceDiagram
@@ -80,6 +90,8 @@ sequenceDiagram
     participant Factory as AiVoiceAdapterFactory
     participant Adapter as CascadedVoiceAdapter
     participant SessionCtx as SessionContextService
+    participant SttStrat as ISttProviderStrategy (Nova3)
+    participant TtsStrat as ITtsProviderStrategy (Sonic35)
     participant DG_Handler as DeepgramSttHandler (Socket 2)
     participant DG_API as Deepgram Nova-3 WSS
     participant GeminiService as GeminiFlashRestService
@@ -103,10 +115,14 @@ sequenceDiagram
         SessionCtx-->>Adapter: Return systemPrompt
         Adapter->>SessionCtx: buildToolDeclarations(role, true, true)
         SessionCtx-->>Adapter: Return 18 function declarations
+        Adapter->>SttStrat: buildWebSocketUrl(apiKey, options)
+        SttStrat-->>Adapter: Return wss://api.deepgram.com URL
         Adapter->>Adapter: connectDeepgramStt(userId, clientSession)
         Adapter->>DG_API: execute(new DeepgramSttHandler(), headers, deepgramWssUrl)
         DG_API-->>DG_Handler: afterConnectionEstablished(session)
         DG_Handler->>DG_Handler: Start keep-alive timer (silent PCM every 5s)
+        Adapter->>TtsStrat: buildWebSocketUrl(apiKey)
+        TtsStrat-->>Adapter: Return wss://api.cartesia.ai URL
         Adapter->>Adapter: connectCartesiaTts(userId, clientSession)
         Adapter->>TTS_API: execute(new CartesiaTtsHandler(), headers, cartesiaWssUrl)
         TTS_API-->>TTS_Handler: afterConnectionEstablished(session)
@@ -121,7 +137,7 @@ sequenceDiagram
         WS->>Adapter: sendClientAudio(clientSession, audioBytes)
         Adapter->>DG_API: deepgramSession.sendMessage(new BinaryMessage(audioBytes))
         DG_API-->>DG_Handler: handleTextMessage(session, message)
-        DG_Handler->>DG_Handler: Parse JSON root.path("is_final").asBoolean()
+        DG_Handler->>DG_Handler: evaluateBargeIn(root) & extractFinalTranscript(root)
         DG_Handler->>Adapter: onFinalTranscript(userId, clientSession, "Can you add a new customer review block?")
         Adapter->>Client: sendMessage(new TextMessage("TRANSCRIPT_USER"))
     end
@@ -153,10 +169,11 @@ sequenceDiagram
     %% 4. TTS Audio Synthesis & Playback (Dark Pink)
     rect rgb(131, 24, 67)
         Note over Adapter, Client: 4. Text-to-Speech (TTS) Synthesis & Speaker Playback
+        Adapter->>TtsStrat: buildSynthesisPayload(objectMapper, text, voiceId, contextId)
+        TtsStrat-->>Adapter: Return JSON frame string
         Adapter->>TTS_API: cartesiaSession.sendMessage(new TextMessage(cartesiaFrameJSON))
         TTS_API-->>TTS_Handler: handleTextMessage(session, message)
-        TTS_Handler->>TTS_Handler: Parse JSON: type=="chunk", extract base64 "data"
-        TTS_Handler->>TTS_Handler: Base64.getDecoder().decode(base64Audio) -> byte[] rawPcm
+        TTS_Handler->>TTS_Handler: handleAudioChunkFrame(root): Base64 decode -> byte[] rawPcm
         TTS_Handler->>Client: safeClientSession.sendMessage(new BinaryMessage(rawPcm))
         Client->>Client: playPcm16Chunk(arrayBuffer): Web Audio API plays 24kHz PCM!
         TTS_API-->>TTS_Handler: handleTextMessage(session, message) -> type=="done"
@@ -167,10 +184,12 @@ sequenceDiagram
     rect rgb(153, 27, 27)
         Note over Client, TTS_API: 5. Barge-in Interruption Handling
         Client->>DG_API: Candidate interrupts while AI is speaking
-        DG_API-->>DG_Handler: handleTextMessage(session, message) -> speech_started: true
+        DG_API-->>DG_Handler: evaluateBargeIn() -> speech_started: true
         DG_Handler->>Adapter: triggerBargeIn(clientSession)
+        Adapter->>TtsStrat: buildCancelPayload(objectMapper, contextId)
+        TtsStrat-->>Adapter: Return cancel JSON string
         Adapter->>TTS_API: Send cancel frame {"context_id": "c123", "cancel": true}
-        Adapter->>Client: sendMessage(new TextMessage("FLUSH_AUDIO_BUFFER"))
+        Adapter->>Client: sendClientFlushSignal(): Send INTERRUPTED & FLUSH_AUDIO_BUFFER
         Client->>Client: stopAllAudioPlayback(): Stop active sources & clear queue!
     end
 ```
@@ -206,8 +225,47 @@ sequenceDiagram
 
 | File Path | Description |
 | :--- | :--- |
-| [`CascadedVoiceAdapter.java`](file:///Users/apple/Coding-projects/reForm-Web-App/backend/src/main/java/com/reForm/backend/ai/service/CascadedVoiceAdapter.java) | Mode 3 3-stage orchestrator, twin outbound WebSockets, silent keep-alive frames, auto-reconnect, and Base64 PCM audio chunk forwarding. |
-| [`GeminiFlashRestService.java`](file:///Users/apple/Coding-projects/reForm-Web-App/backend/src/main/java/com/reForm/backend/ai/service/GeminiFlashRestService.java) | Stateless HTTP REST service invoking `gemini-3.6-flash:generateContent`. |
-| [`Gemini36FlashModelStrategy.java`](file:///Users/apple/Coding-projects/reForm-Web-App/backend/src/main/java/com/reForm/backend/ai/strategy/Gemini36FlashModelStrategy.java) | Model strategy bean registering `GEMINI_3_6_FLASH`. |
-| [`WebClientConfig.java`](file:///Users/apple/Coding-projects/reForm-Web-App/backend/src/main/java/com/reForm/backend/core/config/WebClientConfig.java) | Configures Spring WebClient with 10MB memory buffer. |
-| [`frontend/src/app/mode3/page.tsx`](file:///Users/apple/Coding-projects/reForm-Web-App/frontend/src/app/mode3/page.tsx) | Mode 3 frontend tester UI with Web Audio API 24kHz PCM playback & mic streaming. |
+| [`ISttProviderStrategy.java`](file:///Users/apple/Coding-projects/reForm-Web-App/backend/src/main/java/com/reForm/backend/ai/strategy/stt/ISttProviderStrategy.java) | Strategy interface for STT model variations (`DEEPGRAM_NOVA_3`, `DEEPGRAM_NOVA_2`). |
+| [`ITtsProviderStrategy.java`](file:///Users/apple/Coding-projects/reForm-Web-App/backend/src/main/java/com/reForm/backend/ai/strategy/tts/ITtsProviderStrategy.java) | Strategy interface for TTS model variations (`CARTESIA_SONIC_3_5`, `CARTESIA_SONIC_MULTILINGUAL`). |
+| [`CascadedVoiceAdapter.java`](file:///Users/apple/Coding-projects/reForm-Web-App/backend/src/main/java/com/reForm/backend/ai/service/CascadedVoiceAdapter.java) | Mode 3 3-stage orchestrator refactored with STT/TTS strategies, SRP method decomposition, and `@PreDestroy` thread pool cleanup. |
+| [`GeminiFlashRestService.java`](file:///Users/apple/Coding-projects/reForm-Web-App/backend/src/main/java/com/reForm/backend/ai/service/GeminiFlashRestService.java) | Stateless HTTP REST service dynamically invoking model strategy IDs. |
+| [`application.yml`](file:///Users/apple/Coding-projects/reForm-Web-App/backend/src/main/resources/application.yml) | Centralized voice configuration properties for STT and TTS defaults. |
+
+---
+
+## 6. Strategy Pattern Architectural Mastery & Educational QA
+
+### Q: "Tell me when do I use Strategy Pattern?"
+**Answer:** Use the Strategy Pattern when you have **multiple ways to perform the exact same task** (e.g. transcribing audio, synthesizing speech, formatting LLM requests, calculating tax) and you want to **select or swap between these behaviors at runtime** (via configuration, database profile, or API parameters) without modifying client code.
+
+---
+
+### Q: "What problems lead to the need of this pattern?"
+
+1. **The Giant `if-else` or `switch` Anti-Pattern**: Without Strategy, adding a new model or vendor forces you to add another branch to a growing wall of conditionals. This violates the **Open/Closed Principle (OCP)**.
+2. **Coupling Core Logic to Third-Party Vendor Details**: Embedding Deepgram query strings or Cartesia JSON frame constructions directly inside `CascadedVoiceAdapter` ties your pipeline code to external API changes.
+3. **Inability to Swap Models at Runtime**: Hardcoding `nova-3` or `sonic-3.5` inside methods prevents switching models dynamically per customer or form.
+
+---
+
+### Q: "What questions to ask to know when to use it?"
+
+Ask yourself these **4 diagnostic questions**:
+1. *"Do I have multiple algorithms/implementations that achieve the same operational goal?"*
+2. *"Should the specific implementation be chosen at runtime based on context or config?"*
+3. *"Am I writing a switch or if-else statement to select between variations?"*
+4. *"Will new variations or vendor models be added in the future?"*
+
+👉 If you answer **YES** to 2 or more of these questions, apply the **Strategy Pattern**!
+
+---
+
+### Q: "Are there other patterns that are similar but easy to misunderstand and confuse with Strategy?"
+
+| Pattern | Primary Focus | Key Difference vs Strategy |
+| :--- | :--- | :--- |
+| **Strategy Pattern** | **"HOW to do a behavior/algorithm"** | Swaps *algorithms* sharing an identical interface at runtime (`DeepgramNova3SttStrategy` vs `WhisperSttStrategy`). |
+| **Factory Pattern** | **"CREATING objects"** | Focuses on *instantiating* the object, not *executing the algorithm* (`AiVoiceAdapterFactory.getAdapter(mode)`). |
+| **State Pattern** | **"WHAT STATE an object is in"** | Structurally identical to Strategy, but the *state object transitions itself automatically* as workflow progresses (`Draft` $\rightarrow$ `Published`). Strategy is picked explicitly by the caller. |
+| **Template Method** | **"ALGORITHM SKELETON"** | Uses *Inheritance (`abstract class`)* instead of Interfaces / Composition. |
+| **Adapter Pattern** | **"INTERFACE CONVERSION"** | Converts an incompatible 3rd-party interface so it can collaborate with your code. |
