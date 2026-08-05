@@ -70,3 +70,10 @@ coverage/
 .idea/usage.statistics.xml
 .idea/dictionaries
 .idea/shelf
+
+# =========================================================================
+# Agent Scratch & Exploration Directories
+# =========================================================================
+.agents/
+PROJECT.md
+
