@@ -2,6 +2,7 @@ package com.reForm.backend.ai.service;
 
 import com.reForm.backend.ai.event.FormLayoutModificationEvent;
 import com.reForm.backend.ai.port.IAiVoiceAdapter;
+import com.reForm.backend.ai.tool.registry.ToolCallRegistry;
 import com.reForm.backend.ai.websocket.WebSocketSessionUtils;
 import com.reForm.backend.user.entity.Role;
 import jakarta.websocket.ContainerProvider;
@@ -45,7 +46,8 @@ import java.util.Map;
  * 3. Decomposed Payload Processor: Single-responsibility helper methods for JSON tagged union variants.
  */
 @Slf4j
-@Component
+// Explicit bean name registration so AiVoiceAdapterFactory can resolve MODE_4 strategy dynamically
+@Component("geminiLiveVoiceAdapter")
 @RequiredArgsConstructor
 public class GeminiLiveVoiceAdapter implements IAiVoiceAdapter {
 
@@ -54,7 +56,7 @@ public class GeminiLiveVoiceAdapter implements IAiVoiceAdapter {
     public static final int SEND_TIMEOUT_MS = WebSocketSessionUtils.SEND_TIMEOUT_MS;
 
     private final SessionContextService sessionContextService;
-    private final ApplicationEventPublisher eventPublisher;
+    private final ToolCallRegistry toolCallRegistry;
     private final ObjectMapper objectMapper;
 
     @Value("${gemini.api.key:DEFAULT_PLATFORM_KEY}")
@@ -299,36 +301,14 @@ public class GeminiLiveVoiceAdapter implements IAiVoiceAdapter {
     }
 
     /**
-     * SUB-HELPER: EXECUTE SPECIFIC TOOL CALL
+     * SUB-HELPER: EXECUTE SPECIFIC TOOL CALL (Delegated to Strategy Pattern Registry)
+     * 
+     * Refactored from monolithic if-else blocks to ToolCallRegistry lookup.
+     * Spring auto-wires all IToolCallHandler implementations (EndSessionToolHandler,
+     * ModifyFormLayoutToolHandler, SearchUserDocumentToolHandler, etc.).
      */
     private Map<String, Object> processFunctionCall(WebSocketSession clientSession, JsonNode functionCall, String callId, String functionName) {
-        if ("modifyFormLayout".equals(functionName)) {
-            String formId = (String) clientSession.getAttributes().get("formId");
-            String userIntent = functionCall.path("args").path("userIntent").asText();
-            String targetBlockId = functionCall.path("args").path("targetBlockId").asText(null);
-
-            eventPublisher.publishEvent(new FormLayoutModificationEvent(formId, userIntent, targetBlockId));
-
-            return Map.of(
-                "id", callId,
-                "name", functionName,
-                "response", Map.of("result", Map.of("status", "SUCCESS", "message", "Form layout modification executed"))
-            );
-        } else if ("searchUserDocument".equals(functionName)) {
-            String query = functionCall.path("args").path("query").asText();
-            log.info("Executing searchUserDocument toolCall for query: {}", query);
-            return Map.of(
-                "id", callId,
-                "name", functionName,
-                "response", Map.of("result", Map.of("status", "SUCCESS", "content", "Document context retrieved for: " + query))
-            );
-        } else {
-            return Map.of(
-                "id", callId,
-                "name", functionName,
-                "response", Map.of("result", Map.of("status", "SUCCESS"))
-            );
-        }
+        return toolCallRegistry.executeTool(clientSession, functionCall, callId, functionName);
     }
 
     /**

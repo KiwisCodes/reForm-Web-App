@@ -13,7 +13,8 @@ interface TranscriptMessage {
 
 export default function Mode4TesterPage() {
   const [status, setStatus] = useState<ConnectionStatus>("DISCONNECTED");
-  const [wsUrl, setWsUrl] = useState<string>("ws://localhost:8080/ws/v1/voice?token=test_token");
+  const [selectedMode, setSelectedMode] = useState<"MODE_4" | "MODE_3">("MODE_4");
+  const [wsUrl, setWsUrl] = useState<string>("ws://localhost:8080/ws/v1/voice?token=test_token&mode=MODE_4");
   const [isMicActive, setIsMicActive] = useState<boolean>(false);
   const [textInput, setTextInput] = useState<string>("");
   const [transcripts, setTranscripts] = useState<TranscriptMessage[]>([]);
@@ -315,6 +316,14 @@ export default function Mode4TesterPage() {
         return;
       }
 
+      if (data.type === "SESSION_ENDED") {
+        addLog(`🔴 [SESSION ENDED BY AI] Reason: ${data.reason}. Summary: ${data.summary || "N/A"}`);
+        stopMicrophone();
+        stopAllAudioPlayback();
+        setStatus("DISCONNECTED");
+        return;
+      }
+
       if (data.setupComplete) {
         addLog("🏁 Gemini Setup Complete.");
         return;
@@ -585,6 +594,40 @@ export default function Mode4TesterPage() {
               1. Connection Endpoint
             </h2>
             <div className="space-y-3">
+              <div>
+                <label className="text-[11px] text-slate-400 block mb-1">Voice Architecture Mode</label>
+                <select
+                  value={selectedMode}
+                  onChange={(e) => {
+                    const newMode = e.target.value as "MODE_4" | "MODE_3";
+                    setSelectedMode(newMode);
+                    setWsUrl(`ws://localhost:8080/ws/v1/voice?token=test_token&mode=${newMode}&formId=11111111-1111-1111-1111-111111111111`);
+                  }}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500 transition mb-3"
+                >
+                  <option value="MODE_4">Mode 4: Native Live Voice (Gemini Live ~300ms)</option>
+                  <option value="MODE_3">Mode 3: Cascaded Voice (Deepgram+Cartesia ~700ms)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] text-slate-400 block mb-1">PostgreSQL DB Form Profile</label>
+                <select
+                  onChange={(e) => {
+                    const selectedFormId = e.target.value;
+                    setWsUrl(`ws://localhost:8080/ws/v1/voice?token=test_token&mode=${selectedMode}&formId=${selectedFormId}`);
+                  }}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500 transition mb-3"
+                >
+                  <option value="11111111-1111-1111-1111-111111111111">
+                    Form Filler: Cheerful Java Recruiter (Voice: Kore)
+                  </option>
+                  <option value="22222222-2222-2222-2222-222222222222">
+                    Form Builder: Form Architect Co-Pilot (Voice: Puck)
+                  </option>
+                </select>
+              </div>
+
               <div>
                 <label className="text-[11px] text-slate-400 block mb-1">WebSocket URL</label>
                 <input

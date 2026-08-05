@@ -65,7 +65,17 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
         if ("test_token".equals(token) || "test".equals(token)) {
             attributes.put("userId", "test_user_id");
             attributes.put("role", Role.FORM_BUILDER);
-            log.info("[DEV_TEST_TEMPORARY] WebSocket Handshake authenticated using test token for dev testing.");
+
+            String modeStr = extractParam(query, "mode");
+            attributes.put("mode", (modeStr != null && !modeStr.isBlank()) ? modeStr.toUpperCase() : "MODE_4");
+
+            String formId = extractParam(query, "formId");
+            if (formId != null && !formId.isBlank()) attributes.put("formId", formId);
+
+            String modelKey = extractParam(query, "modelKey");
+            if (modelKey != null && !modelKey.isBlank()) attributes.put("modelKey", modelKey);
+
+            log.info("[DEV_TEST_TEMPORARY] WebSocket Handshake authenticated using test token for dev testing. Mode: {}", attributes.get("mode"));
             return true;
         }
         // =========================================================================================
@@ -90,7 +100,24 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
         attributes.put("userId", userId);
         attributes.put("role", role);
 
-        log.info("WebSocket Handshake authenticated for user: {} (Role: {})", userId, role);
+        // Extract Voice Mode parameter (?mode=MODE_3 vs ?mode=MODE_4) - Default to MODE_4
+        String modeStr = extractParam(query, "mode");
+        String mode = (modeStr != null && !modeStr.isBlank()) ? modeStr.toUpperCase() : "MODE_4";
+        attributes.put("mode", mode); // Saved in session attributes for AiVoiceAdapterFactory resolution
+
+        // Extract target form ID parameter if present (?formId=UUID)
+        String formId = extractParam(query, "formId");
+        if (formId != null && !formId.isBlank()) {
+            attributes.put("formId", formId); // Saved for SessionContextService PostgreSQL profile lookup
+        }
+
+        // Extract optional model key override parameter (?modelKey=GEMINI_3_1_LIVE)
+        String modelKey = extractParam(query, "modelKey");
+        if (modelKey != null && !modelKey.isBlank()) {
+            attributes.put("modelKey", modelKey); // Saved for dynamic model strategy resolution
+        }
+
+        log.info("WebSocket Handshake authenticated for user: {} (Role: {}, Mode: {}, FormId: {})", userId, role, mode, formId);
         return true; // Approve Handshake
     }
 
