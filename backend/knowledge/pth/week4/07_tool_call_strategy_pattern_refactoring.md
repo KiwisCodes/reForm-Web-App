@@ -1,6 +1,6 @@
 # AI Function Calling Tool Routing: Strategy Pattern Refactoring
 
-**Document Version:** 1.0  
+**Document Version:** 1.2  
 **Location:** `backend/knowledge/pth/week4/07_tool_call_strategy_pattern_refactoring.md`  
 **Target System:** reForm Platform (`com.reForm.backend.ai.tool`)  
 
@@ -46,7 +46,7 @@ private Map<String, Object> processFunctionCall(WebSocketSession clientSession, 
 We refactored tool execution into a decoupled, domain-driven **Strategy Pattern** architecture under `com.reForm.backend.ai.tool`:
 
 ```java
-// ✅ AFTER (Clean 1-line Delegation inside GeminiLiveVoiceAdapter.java)
+// ✅ AFTER (Clean 1-line Delegation inside GeminiLiveVoiceAdapter.java / CascadedVoiceAdapter.java)
 private Map<String, Object> processFunctionCall(WebSocketSession clientSession, JsonNode functionCall, String callId, String functionName) {
     return toolCallRegistry.executeTool(clientSession, functionCall, callId, functionName);
 }
@@ -87,20 +87,78 @@ public class ToolCallRegistry {
 }
 ```
 
+### 4. Role of Jackson `JsonNode` in Dynamic Parameter Parsing
+- **What is `JsonNode`?**  
+  `JsonNode` is Jackson's tree-model object representation of a JSON payload (`tools.jackson.databind.JsonNode`). It acts as a dynamic AST (Abstract Syntax Tree) for arbitrary JSON structures.
+- **Why do we pass `JsonNode functionCall` into `IToolCallHandler`?**
+  1. **Dynamic Tool Schemas**: Each of the 18+ tools receives completely different JSON parameter structures:
+     - `modifyFormLayout` $\rightarrow$ `{ "action": "ADD_FIELD", "label": "Email" }`
+     - `endSession` $\rightarrow$ `{ "reason": "USER_REQUESTED", "summary": "Done" }`
+     - `searchUserDocument` $\rightarrow$ `{ "query": "Return policy" }`
+     Without `JsonNode`, we would need 18+ separate Java DTO classes or fragile string manipulation.
+  2. **Null-Safe Property Traversal with `.path()`**:
+     Standard getters (`node.get("field")`) throw `NullPointerException` if a property is missing. Jackson's `node.path("field")` returns a safe `MissingNode`, allowing tools to safely extract values with fallbacks without server crashes:
+     ```java
+     JsonNode args = functionCall.path("args"); // Null-safe extraction
+     String action = args.path("action").asText("DEFAULT_ACTION");
+     ```
+  3. **Zero Coupling**: `ToolCallRegistry` and voice adapters do not need to know or validate individual tool schemas — they simply pass the raw `JsonNode` tree to the target strategy handler.
+
 ---
 
-## 3. Visual Architecture Diagram
+## 3. How Tool Selection & Retrieval Works (Step-by-Step Execution Flow)
+
+Here is the exact step-by-step sequence of how the system selects and executes the **one correct tool** out of 18+ registered tools:
+
+```text
+[Step 1: Startup Auto-Registration]
+  Spring Component Scan → Finds all @Component beans implementing IToolCallHandler
+       ↓
+  ToolCallRegistry Constructor receives List<IToolCallHandler>
+       ↓
+  Transforms List into Map<String, IToolCallHandler>:
+  {
+     "modifyFormLayout"        => ModifyFormLayoutToolHandler instance,
+     "configureFillerPersona"  => ConfigureFillerPersonaToolHandler instance,
+     "publishForm"             => PublishFormToolHandler instance,
+     "endSession"              => EndSessionToolHandler instance,
+     ...
+  }
+
+[Step 2: Incoming Gemini AI Tool Call]
+  Gemini AI returns JSON frame:
+  { "functionCall": { "name": "modifyFormLayout", "args": { "action": "ADD_FIELD", "label": "Review" } } }
+       ↓
+  Voice Adapter extracts functionName = "modifyFormLayout"
+
+[Step 3: O(1) Instant Lookup in Registry]
+  toolCallRegistry.executeTool(clientSession, functionCall, callId, "modifyFormLayout")
+       ↓
+  IToolCallHandler handler = handlerMap.get("modifyFormLayout");
+  (Executes hash calculation to retrieve ModifyFormLayoutToolHandler in O(1) constant time — ZERO if-else!)
+
+[Step 4: Strategy Execution & Fallback]
+  if (handler != null) {
+      return handler.execute(clientSession, functionCall, callId); // Runs domain business logic!
+  } else {
+      return genericFallbackSuccess(callId, functionName); // Graceful fallback if unhandled
+  }
+```
+
+---
+
+## 4. Visual Architecture Diagram
 
 ```mermaid
 graph TD
-    Gemini[Google Gemini Live API] -->|toolCall JSON Frame| Adapter[GeminiLiveVoiceAdapter]
+    Gemini[Google Gemini Live / Flash API] -->|functionCall JSON Frame| Adapter[Voice Adapter / Service]
     Adapter -->|1-line Delegate Call| Registry[ToolCallRegistry]
     
-    subgraph Tool Strategy Handlers (com.reForm.backend.ai.tool.handler.*)
-        Registry -->|Lookup 'endSession'| H1[EndSessionToolHandler]
-        Registry -->|Lookup 'modifyFormLayout'| H2[ModifyFormLayoutToolHandler]
-        Registry -->|Lookup 'searchUserDocument'| H3[SearchUserDocumentToolHandler]
-        Registry -->|Lookup Unimplemented Tool| Fallback[Generic Success Fallback]
+    subgraph ToolHandlers ["Tool Strategy Handlers (com.reForm.backend.ai.tool.handler.*)"]
+        Registry -->|"O(1) Map Lookup 'endSession'"| H1[EndSessionToolHandler]
+        Registry -->|"O(1) Map Lookup 'modifyFormLayout'"| H2[ModifyFormLayoutToolHandler]
+        Registry -->|"O(1) Map Lookup 'searchUserDocument'"| H3[SearchUserDocumentToolHandler]
+        Registry -->|"Unmapped Function Name"| Fallback[Generic Success Fallback]
     end
 
     H1 -->|SESSION_ENDED + Teardown| Browser[Client Browser]
@@ -110,7 +168,7 @@ graph TD
 
 ---
 
-## 4. Package Directory & Component Organization
+## 5. Package Directory & Component Organization
 
 ```text
 com.reForm.backend.ai.tool/
@@ -147,10 +205,11 @@ com.reForm.backend.ai.tool/
 
 ---
 
-## 5. Architectural Benefits Summary
+## 6. Architectural Benefits Summary
 
 | Metric | Before (Monolithic `if-else`) | After (Strategy Pattern + Registry) |
 |:---|:---|:---|
+| **Lookup Time** | $O(N)$ sequential conditional evaluation | $O(1)$ instant Hash Map lookup |
 | **Extensibility** | Edit `GeminiLiveVoiceAdapter.java` for every tool | Add 1 standalone `@Component` class |
 | **Coupling** | High (Adapter bound to all 18 tools' logic) | Zero (Adapter bound only to `ToolCallRegistry`) |
 | **Testability** | Hard (Must mock full WebSocket streaming context) | Easy (Test each tool handler in isolated unit tests) |
