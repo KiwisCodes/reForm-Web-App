@@ -118,6 +118,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/submissions/**").permitAll()
                         .requestMatchers("/api/v1/f/**").permitAll()
                         .requestMatchers("/ws/v1/voice/**").permitAll()                 // Open voice WebSocket endpoint
+                        .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll() // Open Swagger UI and OpenAPI docs
                         .requestMatchers("/.well-known/**").permitAll()                // [DEV_TEST_TEMPORARY] Chrome DevTools background noise request bypass
                         .requestMatchers("/favicon.ico").permitAll()                   // [DEV_TEST_TEMPORARY] Browser favicon noise request bypass
                         .requestMatchers("/error").permitAll()                        // necessary for form and submission module
