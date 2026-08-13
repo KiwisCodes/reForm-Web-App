@@ -4,6 +4,10 @@ import com.reForm.backend.ai.session.ChatRole;
 import com.reForm.backend.ai.session.ChatTurn;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -14,19 +18,25 @@ import java.util.Map;
 // docs for the full reasoning): reuse via a shared method risked coupling to a file under active
 // development elsewhere and would need extra work to strip out voice-only fields (tools) anyway,
 // for no gain since FormAiAgentProfile integration is deliberately deferred either way.
-// The system instruction is isolated behind one method rather than inlined, so swapping the
-// hardcoded constant for a FormAiAgentProfile-sourced template later is a one-line change.
+// Loads system instructions dynamically from /prompts/mode2_system_instruction.txt on classpath.
 @Component
 public class FormChatPromptBuilder {
 
-    // Need more details
-    private static final String SYSTEM_INSTRUCTION =
-            "You are a form-building assistant. Based on the user's message and the form's "
-                    + "current blocks (if any), decide the complete revised set of blocks. "
-                    + "Only use fields and values allowed by the provided schema.";
+    private final String systemInstruction;
+
+    public FormChatPromptBuilder() {
+        try (InputStream is = getClass().getResourceAsStream("/prompts/mode2_system_instruction.txt")) {
+            if (is == null) {
+                throw new IllegalStateException("Could not find /prompts/mode2_system_instruction.txt on classpath");
+            }
+            this.systemInstruction = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to load Mode 2 system instruction prompt resource", e);
+        }
+    }
 
     public String buildSystemInstruction() {
-        return SYSTEM_INSTRUCTION;
+        return systemInstruction;
     }
 
     public List<Map<String, Object>> buildConversationContents(List<ChatTurn> history, String newUserMessage) {

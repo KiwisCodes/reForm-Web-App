@@ -2,6 +2,7 @@ package com.reForm.backend.ai.schema;
 
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.reForm.backend.form.entity.block.AbstractBlock;
+import com.reForm.backend.form.entity.block.BlockType;
 import com.reForm.backend.form.entity.block.conversationalBlock.ConversationalBlock;
 import com.reForm.backend.form.entity.block.staticblock.StaticBlock;
 import org.springframework.stereotype.Component;
@@ -32,7 +33,7 @@ public class BlockSchemaGenerator {
 
     public Map<String, Object> generateStaticSchemaFor(String staticType, SchemaDialect dialect) {
         Class<? extends AbstractBlock> target = resolveStaticSubtype(staticType);
-        return buildObjectSchema(target, "staticType", staticType, dialect);
+        return buildObjectSchema(target, BlockType.STATIC, staticType, dialect);
     }
 
     // Enumerates every known static leaf without a second, separately maintained list — reads it
@@ -40,13 +41,13 @@ public class BlockSchemaGenerator {
     public Map<String, Map<String, Object>> generateAllStaticSchemas(SchemaDialect dialect) {
         Map<String, Map<String, Object>> all = new LinkedHashMap<>();
         for (JsonSubTypes.Type t : StaticBlock.class.getAnnotation(JsonSubTypes.class).value()) {
-            all.put(t.name(), buildObjectSchema(t.value().asSubclass(AbstractBlock.class), "staticType", t.name(), dialect));
+            all.put(t.name(), buildObjectSchema(t.value().asSubclass(AbstractBlock.class), BlockType.STATIC, t.name(), dialect));
         }
         return all;
     }
 
     public Map<String, Object> generateConversationalSchema(SchemaDialect dialect) {
-        return buildObjectSchema(ConversationalBlock.class, null, null, dialect);
+        return buildObjectSchema(ConversationalBlock.class, BlockType.CONVERSATIONAL, null, dialect);
     }
 
     // Constrains a whole-form/whole-turn response to "an array where each element matches any one
@@ -69,6 +70,22 @@ public class BlockSchemaGenerator {
         );
     }
 
+    // Constrains a whole-form-creation response to AiFormDto's exact shape (title + blocks) — what
+    // AiBlockApplicationService.createFormFromAiBlocks needs. Built on top of
+    // generateBlocksArraySchema rather than re-deriving the block-variant list a second time, so a
+    // new block type is still picked up here with zero changes, same as every other method above.
+    public Map<String, Object> generateFormSchema(SchemaDialect dialect) {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("title", Map.of("type", dialect.stringType()));
+        properties.put("blocks", generateBlocksArraySchema(dialect));
+
+        return Map.of(
+                "type", dialect.objectType(),
+                "properties", properties,
+                "required", List.of("title", "blocks")
+        );
+    }
+
     private Class<? extends AbstractBlock> resolveStaticSubtype(String staticType) {
         for (JsonSubTypes.Type t : StaticBlock.class.getAnnotation(JsonSubTypes.class).value()) {
             if (t.name().equals(staticType)) {
@@ -78,17 +95,24 @@ public class BlockSchemaGenerator {
         throw new IllegalArgumentException("Unknown staticType: " + staticType);
     }
 
+    // "category" (STATIC/CONVERSATIONAL) is the discriminator AiBlockDto's @JsonTypeInfo dispatches
+    // on when parsing Gemini's response — every block schema must require it, or Gemini's
+    // constrained decoding has no token path to ever emit it (see AiResponseParser /
+    // AiBlockDto). "staticType" is a second, narrower discriminator only static leaves carry.
     private Map<String, Object> buildObjectSchema(Class<? extends AbstractBlock> clazz,
-                                                    String discriminatorProperty,
-                                                    String discriminatorValue,
+                                                    BlockType category,
+                                                    String staticType,
                                                     SchemaDialect dialect) {
         Map<String, Object> properties = new LinkedHashMap<>();
         List<String> required = new ArrayList<>();
         required.add("label");
 
-        if (discriminatorProperty != null) {
-            properties.put(discriminatorProperty, Map.of("type", dialect.stringType(), "enum", List.of(discriminatorValue)));
-            required.add(discriminatorProperty);
+        properties.put("category", Map.of("type", dialect.stringType(), "enum", List.of(category.name())));
+        required.add("category");
+
+        if (staticType != null) {
+            properties.put("staticType", Map.of("type", dialect.stringType(), "enum", List.of(staticType)));
+            required.add("staticType");
         }
 
         for (Field field : allFieldsIncludingInherited(clazz)) {

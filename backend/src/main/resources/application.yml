@@ -58,4 +58,4 @@ app:
 
 gemini:
   api:
-    key: ${GEMINI_API_KEY}
+    key: ${GEMINI_API_KEY:dev_key_missing}

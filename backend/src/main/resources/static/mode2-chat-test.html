@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mode 2 Chat Test Harness</title>
+<style>
+  :root { color-scheme: light; }
+  body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; color: #1c1c1c; }
+  h1 { font-size: 1.3rem; }
+  h2 { font-size: 1rem; margin-top: 0; }
+  section { border: 1px solid #ddd; border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 1.25rem; }
+  label { display: block; font-size: 0.85rem; font-weight: 600; margin-top: 0.6rem; }
+  input[type=text], input[type=email], input[type=password] {
+    width: 100%; font-size: 0.95rem; padding: 0.4rem 0.5rem; box-sizing: border-box;
+    margin-top: 0.2rem; border: 1px solid #ccc; border-radius: 6px;
+  }
+  button { cursor: pointer; font-size: 0.9rem; padding: 0.5rem 0.9rem; border-radius: 6px;
+    border: 1px solid #333; background: #222; color: #fff; margin-top: 0.8rem; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.secondary { background: #fff; color: #222; }
+  .row { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+  .row > div { flex: 1; min-width: 180px; }
+  .status { font-size: 0.85rem; color: #666; margin-top: 0.5rem; white-space: pre-wrap; }
+  .status.error { color: #b00020; }
+  .ids { font-size: 0.8rem; color: #444; margin-top: 0.6rem; font-family: ui-monospace, monospace; }
+  #chatSection { display: none; }
+
+  #transcript {
+    border: 1px solid #ddd; border-radius: 10px; padding: 1rem; height: 420px;
+    overflow-y: auto; background: #f7f7f8; display: flex; flex-direction: column; gap: 0.75rem;
+  }
+  .bubble { max-width: 82%; padding: 0.6rem 0.85rem; border-radius: 14px; font-size: 0.9rem; line-height: 1.4; }
+  .bubble.user { align-self: flex-end; background: #2563eb; color: #fff; border-bottom-right-radius: 4px; }
+  .bubble.ai { align-self: flex-start; background: #fff; border: 1px solid #ddd; border-bottom-left-radius: 4px; }
+  .bubble.ai.pending { color: #888; font-style: italic; }
+  .bubble.ai.error { border-color: #b00020; color: #b00020; }
+  .bubble .meta { font-size: 0.7rem; opacity: 0.7; margin-bottom: 0.25rem; }
+  .bubble .blockline { padding: 0.15rem 0; }
+  .bubble details { margin-top: 0.4rem; }
+  .bubble summary { cursor: pointer; font-size: 0.75rem; color: #2563eb; }
+  .bubble.ai summary { color: #2563eb; }
+  .bubble pre { background: #f0f0f0; padding: 0.5rem; border-radius: 6px; overflow-x: auto;
+    white-space: pre-wrap; word-break: break-word; font-size: 0.75rem; margin: 0.4rem 0 0; }
+
+  #composer { display: flex; gap: 0.6rem; margin-top: 0.8rem; }
+  #composer input { flex: 1; }
+  #composer button { margin-top: 0; }
+</style>
+</head>
+<body>
+
+<h1>Mode 2 Chat Test Harness</h1>
+<p style="color:#555; font-size:0.9rem;">
+  Drives the real, authenticated pipeline (<code>/api/v1/auth</code> &rarr; <code>/api/v1/workspaces</code> &rarr;
+  <code>/api/v1/ai/chat/new/{draftSessionId}</code> for the first message, then
+  <code>/api/v1/ai/chat/{formId}</code> for every message after) &mdash; not a bypass harness.
+  Your very first message is what creates the form: Gemini decides the title and the full block list from
+  scratch. Every reply after that shows the exact block(s) Gemini returned, applied to that same real form.
+</p>
+
+<section id="setupSection">
+  <h2>1. Start a test session</h2>
+  <p style="font-size:0.8rem;color:#666;margin:0.2rem 0 0;">
+    Registers (or logs in, if this email already exists) a test user, then creates a fresh workspace.
+    No form exists yet -- your first chat message creates it.
+  </p>
+  <div class="row">
+    <div>
+      <label for="email">Email</label>
+      <input type="email" id="email">
+    </div>
+    <div>
+      <label for="password">Password</label>
+      <input type="password" id="password" value="TestPass123!">
+    </div>
+    <div>
+      <label for="username">Username</label>
+      <input type="text" id="username" value="mode2tester">
+    </div>
+  </div>
+  <button id="startBtn">Start Test Session</button>
+  <button id="resumeBtn" class="secondary">Resume existing form (below)</button>
+  <div class="row" id="resumeRow" style="display:none;">
+    <div>
+      <label for="resumeWorkspaceId">Workspace ID</label>
+      <input type="text" id="resumeWorkspaceId">
+    </div>
+    <div>
+      <label for="resumeFormId">Form ID</label>
+      <input type="text" id="resumeFormId">
+    </div>
+  </div>
+  <div class="status" id="setupStatus"></div>
+  <div class="ids" id="setupIds"></div>
+</section>
+
+<section id="chatSection">
+  <h2>2. Chat with the form-building AI</h2>
+  <div id="transcript"></div>
+  <div id="composer">
+    <input type="text" id="messageInput" placeholder="e.g. Create a customer feedback form for my mobile game" autocomplete="off">
+    <button id="sendBtn">Send</button>
+  </div>
+</section>
+
+<script>
+(function () {
+  const state = { token: null, workspaceId: null, formId: null, draftSessionId: null };
+
+  const setupStatusEl = document.getElementById('setupStatus');
+  const setupIdsEl = document.getElementById('setupIds');
+  const chatSection = document.getElementById('chatSection');
+  const transcript = document.getElementById('transcript');
+  const sendBtn = document.getElementById('sendBtn');
+  const messageInput = document.getElementById('messageInput');
+
+  document.getElementById('email').value = 'mode2tester+' + Date.now() + '@example.com';
+
+  document.getElementById('resumeBtn').addEventListener('click', () => {
+    const row = document.getElementById('resumeRow');
+    row.style.display = row.style.display === 'none' ? 'flex' : 'none';
+  });
+
+  function setStatus(msg, isError) {
+    setupStatusEl.textContent = msg;
+    setupStatusEl.className = 'status' + (isError ? ' error' : '');
+  }
+
+  async function api(method, path, body, extraHeaders) {
+    const headers = Object.assign({ 'Content-Type': 'application/json' }, extraHeaders || {});
+    if (state.token) headers['Authorization'] = 'Bearer ' + state.token;
+    const res = await fetch(path, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined
+    });
+    const text = await res.text();
+    let data;
+    try { data = text ? JSON.parse(text) : null; } catch (e) { data = text; }
+    if (!res.ok) {
+      const detail = typeof data === 'string' ? data : JSON.stringify(data);
+      throw new Error(`${method} ${path} -> ${res.status}: ${detail}`);
+    }
+    return data;
+  }
+
+  async function loginOnly(email, password) {
+    const auth = await api('POST', '/api/v1/auth/login', { username: email, password });
+    state.token = auth.accessToken;
+    return auth;
+  }
+
+  document.getElementById('startBtn').addEventListener('click', async () => {
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    const username = document.getElementById('username').value.trim();
+    const startBtn = document.getElementById('startBtn');
+    startBtn.disabled = true;
+    try {
+      setStatus('Registering test user...');
+      try {
+        await api('POST', '/api/v1/users/register', { email, password, username });
+      } catch (e) {
+        // Fine if the account already exists (e.g. re-running with the same email) -- fall through to login.
+        console.warn('register skipped:', e.message);
+      }
+
+      setStatus('Logging in...');
+      await loginOnly(email, password);
+
+      setStatus('Creating a test workspace...');
+      const workspace = await api('POST', '/api/v1/workspaces', {
+        name: 'Mode 2 Test Workspace',
+        description: 'Created by mode2-chat-test.html'
+      });
+      state.workspaceId = workspace.id;
+      state.formId = null;
+      state.draftSessionId = crypto.randomUUID();
+
+      setupIdsEl.textContent = `workspaceId: ${state.workspaceId}\nformId: (none yet -- your first message creates it)`;
+      setStatus('Ready. Describe the form you want in the chat below.');
+      chatSection.style.display = 'block';
+      messageInput.focus();
+    } catch (err) {
+      setStatus(err.message, true);
+    } finally {
+      startBtn.disabled = false;
+    }
+  });
+
+  document.getElementById('resumeBtn').insertAdjacentElement('afterend', (() => {
+    const btn = document.createElement('button');
+    btn.textContent = 'Log in & resume';
+    btn.className = 'secondary';
+    btn.style.marginLeft = '0.5rem';
+    btn.addEventListener('click', async () => {
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      const workspaceId = document.getElementById('resumeWorkspaceId').value.trim();
+      const formId = document.getElementById('resumeFormId').value.trim();
+      btn.disabled = true;
+      try {
+        setStatus('Logging in...');
+        await loginOnly(email, password);
+        state.workspaceId = workspaceId;
+        state.formId = formId;
+        setupIdsEl.textContent = `workspaceId: ${state.workspaceId}\nformId: ${state.formId}`;
+        setStatus('Ready. Chat below (history resumes automatically -- sessionId is derived from formId).');
+        chatSection.style.display = 'block';
+        messageInput.focus();
+      } catch (err) {
+        setStatus(err.message, true);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    return btn;
+  })());
+
+  function addBubble(role, contentEl) {
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble ' + role;
+    bubble.appendChild(contentEl);
+    transcript.appendChild(bubble);
+    transcript.scrollTop = transcript.scrollHeight;
+    return bubble;
+  }
+
+  function textNode(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div;
+  }
+
+  function renderAiForm(form) {
+    const wrap = document.createElement('div');
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.textContent = `Form: "${form.title}" (${form.status || ''})`;
+    wrap.appendChild(meta);
+
+    const blocks = form.blocks || [];
+    if (blocks.length === 0) {
+      wrap.appendChild(textNode('(no blocks yet)'));
+    } else {
+      blocks.forEach((b, i) => {
+        const line = document.createElement('div');
+        line.className = 'blockline';
+        const type = b.staticType || b.conversationalType || b.type || '?';
+        line.textContent = `${i + 1}. ${b.label || '(untitled)'} -- ${type}`;
+        wrap.appendChild(line);
+      });
+    }
+
+    const details = document.createElement('details');
+    const summary = document.createElement('summary');
+    summary.textContent = 'Raw JSON (what Gemini produced, applied to the form)';
+    const pre = document.createElement('pre');
+    pre.textContent = JSON.stringify(form, null, 2);
+    details.appendChild(summary);
+    details.appendChild(pre);
+    wrap.appendChild(details);
+
+    return wrap;
+  }
+
+  async function sendMessage() {
+    const message = messageInput.value.trim();
+    if (!message || !state.workspaceId) return;
+    messageInput.value = '';
+    sendBtn.disabled = true;
+
+    addBubble('user', textNode(message));
+    const creating = !state.formId;
+    const pending = addBubble('ai pending', textNode(creating ? 'Gemini is designing the form...' : 'Gemini is thinking...'));
+
+    try {
+      const path = creating
+        ? `/api/v1/ai/chat/new/${encodeURIComponent(state.draftSessionId)}`
+        : `/api/v1/ai/chat/${encodeURIComponent(state.formId)}`;
+      const result = await api('POST', path, { message }, { 'X-Workspace-Id': state.workspaceId });
+
+      if (creating) {
+        state.formId = result.form.id;
+        setupIdsEl.textContent = `workspaceId: ${state.workspaceId}\nformId: ${state.formId}`;
+      }
+
+      pending.remove();
+      addBubble('ai', renderAiForm(result.form));
+    } catch (err) {
+      pending.remove();
+      addBubble('ai error', textNode(err.message));
+    } finally {
+      sendBtn.disabled = false;
+      messageInput.focus();
+    }
+  }
+
+  sendBtn.addEventListener('click', sendMessage);
+  messageInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') sendMessage();
+  });
+})();
+</script>
+
+</body>
+</html>

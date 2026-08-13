@@ -122,6 +122,7 @@ public class SecurityConfig {
                         .requestMatchers("/favicon.ico").permitAll()                   // [DEV_TEST_TEMPORARY] Browser favicon noise request bypass
                         .requestMatchers("/ai-test.html").permitAll()                  // [DEV_TEST_TEMPORARY] Mode 2 schema test harness page
                         .requestMatchers("/api/v1/ai/test/**").permitAll()             // [DEV_TEST_TEMPORARY] Mode 2 schema test harness endpoint
+                        .requestMatchers("/mode2-chat-test.html", "/mode2-chat-test.html*").permitAll()          // [DEV_TEST_TEMPORARY] Mode 2 end-to-end chat test harness page (the page itself only -- it calls the real, still-authenticated /api/v1/ai/chat/** endpoint with a real JWT)
                         .requestMatchers("/error").permitAll()                        // necessary for form and submission module
                         .anyRequest().authenticated()                                   // Secure all other endpoints (A valid JWT MUST be provided)
                 )

@@ -19,6 +19,9 @@ class FormChatPromptBuilderTest {
     void buildSystemInstructionReturnsNonBlankConstant() {
         String instruction = builder.buildSystemInstruction();
         assertTrue(instruction != null && !instruction.isBlank());
+        assertTrue(instruction.contains("DOMAIN EXPANSION"));
+        assertTrue(instruction.contains("CONVERSATIONAL BLOCKS"));
+        assertTrue(instruction.contains("COGNITIVE FUNNEL"));
     }
 
     @Test

@@ -83,7 +83,7 @@ Content-Type: application/json
 ### 3. GLOBAL WORKSPACE ID VARIABLE
 ### =========================================================================
 # Run 'Create Workspace' first, copy the workspace ID from the response, and paste it here:
-@workspaceId = ed84124a-1800-491b-8c29-fe8b8df5b9d9
+@workspaceId = 994a4733-a0ba-4928-99dc-c6936c6bed75
 
 
 ### =========================================================================
