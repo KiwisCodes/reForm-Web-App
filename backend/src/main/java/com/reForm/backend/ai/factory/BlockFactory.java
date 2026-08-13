@@ -14,8 +14,7 @@ import java.util.Map;
 // Merges each AiBlockDto's known fields (plus AiStaticBlockDto's additionalProperties catch-all)
 // into a plain Map, then hands it to AbstractBlock's own dispatch — AbstractBlockDeserializer
 // branches on "type" (STATIC -> StaticBlock's "staticType" leaves, CONVERSATIONAL ->
-// ConversationalBlock) — instead of a hand-written switch + setter per block attribute. See
-// week3/custom-abstractblock-deserializer-static-vs-conversational.md for why this dispatch works.
+// ConversationalBlock) — instead of a hand-written switch + setter per block attribute.
 @Component
 @RequiredArgsConstructor
 public class BlockFactory {
@@ -49,7 +48,21 @@ public class BlockFactory {
         merged.put("required", dto.isRequired());
         merged.put("prompt", dto.getPrompt());
         merged.put("persona", dto.getPersona());
+        merged.put("voiceName", dto.getVoiceName());
         merged.put("maxQuestions", dto.getMaxQuestions());
+
+        if (dto.getGoals() != null) {
+            merged.put("goals", dto.getGoals());
+        }
+        if (dto.getAllowedToolNames() != null) {
+            merged.put("allowedToolNames", dto.getAllowedToolNames());
+        }
+        if (dto.getMaxTurnCount() != null) {
+            merged.put("maxTurnCount", dto.getMaxTurnCount());
+        }
+        if (dto.getEvaluationRubric() != null) {
+            merged.put("evaluationRubric", dto.getEvaluationRubric());
+        }
 
         return objectMapper.convertValue(merged, AbstractBlock.class);
     }

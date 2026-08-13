@@ -53,6 +53,11 @@ import java.util.concurrent.TimeUnit;
  * - Single Responsibility Principle (SRP) method decomposition.
  * - Spring-managed @PreDestroy graceful thread pool shutdown.
  */
+import com.reForm.backend.form.entity.Form;
+import com.reForm.backend.form.entity.block.AbstractBlock;
+import com.reForm.backend.form.entity.block.conversationalBlock.ConversationalBlock;
+import com.reForm.backend.form.repository.FormRepository;
+
 @Slf4j
 @Component("cascadedVoiceAdapter")
 @RequiredArgsConstructor
@@ -64,6 +69,7 @@ public class CascadedVoiceAdapter implements IAiVoiceAdapter {
     private final GeminiFlashRestService geminiFlashRestService;
     private final ToolCallRegistry toolCallRegistry;
     private final FormAiAgentProfileRepository profileRepository;
+    private final FormRepository formRepository;
     private final ObjectMapper objectMapper;
 
     // Injected STT & TTS Strategy Beans (Strategy Pattern)
@@ -150,9 +156,36 @@ public class CascadedVoiceAdapter implements IAiVoiceAdapter {
         return null;
     }
 
+    private ConversationalBlock resolveActiveBlock(WebSocketSession clientSession) {
+        String formId = (String) clientSession.getAttributes().get("formId");
+        if (formId != null && !formId.isBlank()) {
+            try {
+                Form form = formRepository.findById(UUID.fromString(formId)).orElse(null);
+                if (form != null && form.getBlocks() != null) {
+                    for (AbstractBlock block : form.getBlocks()) {
+                        if (block instanceof ConversationalBlock convBlock) {
+                            return convBlock;
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Failed to resolve active ConversationalBlock for formId: {}", formId, e);
+            }
+        }
+        return null;
+    }
+
     private void compilePromptAndTools(WebSocketSession clientSession, Role role, FormAiAgentProfile profile) {
-        String systemPrompt = sessionContextService.compileSystemInstruction(role, profile, null);
-        List<Map<String, Object>> tools = sessionContextService.buildToolDeclarations(role, true, true);
+        ConversationalBlock activeBlock = resolveActiveBlock(clientSession);
+        if (activeBlock != null) {
+            clientSession.getAttributes().put("activeBlock", activeBlock);
+            if (activeBlock.getRagDocumentIds() != null && !activeBlock.getRagDocumentIds().isEmpty()) {
+                clientSession.getAttributes().put("ragDocumentIds", activeBlock.getRagDocumentIds());
+            }
+        }
+
+        String systemPrompt = sessionContextService.compileSystemInstruction(role, profile, activeBlock);
+        List<Map<String, Object>> tools = sessionContextService.buildToolDeclarations(role, true, true, activeBlock);
 
         clientSession.getAttributes().put("systemPrompt", systemPrompt);
         clientSession.getAttributes().put("tools", tools);

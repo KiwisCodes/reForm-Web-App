@@ -565,6 +565,12 @@ graph TD
    - *DIP*: Depends on `FormRepository` abstraction rather than concrete database drivers.
    - *KISS*: Appends validated blocks directly into a single PostgreSQL JSONB array column.
 7. **Open Questions**: How should multi-step conversational "Undo" operations be managed if a user says "Undo the last three block additions"?
+8. **Spring AI Integration Analysis**:
+   - **Problem (Without Spring AI)**: Manual Jackson `ObjectMapper` parsing and raw JSON prompt formatting required to turn Gemini 3.6 Flash text output into typed `AbstractBlock` Java DTOs.
+   - **Spring AI Solution**: Use `ChatClient` with `BeanOutputConverter<AbstractBlockRecord>` to automatically instruct Gemini on JSON schema expectations and parse response directly into typed Records.
+   - **Benefit vs. Current Design**: Eliminates custom JSON validation boilerplate and Jackson deserialization try-catch blocks; guarantees type-safe block creation.
+   - **Migration Impact**: LOW — `LayoutAgent` already runs asynchronously in Mode 2 REST mode via Spring `@Async`.
+   - **Recommendation**: **USE** — Highly beneficial for structured JSON schema generation.
 
 
 ---
@@ -641,6 +647,12 @@ graph TD
    - *DIP*: Depends on `List<IBlockValidatorStrategy>` autowired abstractions.
    - *KISS*: Executes a single linear pass over block AST nodes.
 7. **Open Questions**: Should custom client-side validation JavaScript snippets embedded in form blocks be evaluated via GraalVM sandbox or restricted to JSON-declarative rules?
+8. **Spring AI Integration Analysis**:
+   - **Problem (Without Spring AI)**: Manual JSON Schema compilation using Jackson JsonSchema and Jakarta Validation 3.0 annotations.
+   - **Spring AI Solution**: Combine `BeanOutputConverter` schema format generation with Spring AI `ChatClient` function call parameters.
+   - **Benefit vs. Current Design**: Standardizes JSON schema format instructions sent to Gemini and reduces custom Schema validation parser logic.
+   - **Migration Impact**: LOW — Refactors schema format generation helper methods.
+   - **Recommendation**: **USE** — Simplifies JSON schema validation contract generation.
 
 
 ---
@@ -661,6 +673,12 @@ graph TD
    - *DIP*: Depends on abstract `IDocumentContentExtractor` service.
    - *KISS*: Returns generated block count and dispatches append events.
 7. **Open Questions**: How should oversized documents (>50 pages) be summarized before passing to Gemini Flash for question generation?
+8. **Spring AI Integration Analysis**:
+   - **Problem (Without Spring AI)**: Requires custom document loading, raw text extraction, manual prompt template compilation, and Jackson response parsing.
+   - **Spring AI Solution**: Pipeline `TikaDocumentReader` (to extract clean text) $\rightarrow$ `TokenTextSplitter` (chunking) $\rightarrow$ `ChatClient.prompt().entity(QuestionBlockList.class)`.
+   - **Benefit vs. Current Design**: Converts an entire 50-line multi-step document extraction + parsing class into a 5-line declarative Spring AI pipeline with automatic POJO mapping.
+   - **Migration Impact**: LOW — Standalone tool handler.
+   - **Recommendation**: **USE** — Significant reduction in document parsing boilerplate.
 
 ---
 
@@ -741,6 +759,12 @@ graph TD
    - *DIP*: Depends on `IContrastAuditor` abstraction.
    - *KISS*: Emits flat key-value CSS variable maps directly injectable into DOM element styles.
 7. **Open Questions**: How should high-frequency color picker adjustments over WebSockets be throttled to prevent LLM rate limit exhaustion?
+8. **Spring AI Integration Analysis**:
+   - **Problem (Without Spring AI)**: Manual prompt creation and raw string parsing to generate Tailwind v4 tokens and WCAG color maps.
+   - **Spring AI Solution**: `ChatClient.prompt().user(brandingPrompt).entity(ThemeTokensRecord.class)`.
+   - **Benefit vs. Current Design**: Guarantees CSS variable key-value JSON formatting via `BeanOutputConverter` without raw string regex parsing.
+   - **Migration Impact**: LOW — Mode 2 REST endpoint.
+   - **Recommendation**: **USE** — Clean structured output for UI theme tokens.
 
 
 ---
@@ -777,6 +801,12 @@ graph TD
    - *DIP*: High-level service depends on `ITranslationCache` and `ILLMProvider` abstractions.
    - *KISS*: Operates on a simple flat dictionary map of block UUID to translated strings.
 7. **Open Questions**: Should localized validation rules (e.g., US Zip Code vs UK Postcode regex) automatically swap when display language changes?
+8. **Spring AI Integration Analysis**:
+   - **Problem (Without Spring AI)**: Manual dictionary JSON construction and response parsing for 50+ target languages.
+   - **Spring AI Solution**: `ChatClient.prompt().system(translationPrompt).entity(new ParameterizedTypeReference<Map<UUID, String>>() {})`.
+   - **Benefit vs. Current Design**: `MapOutputConverter` automatically deserializes translated text dictionary maps bound to block UUIDs.
+   - **Migration Impact**: LOW — Wraps behind `ITranslationEngine`.
+   - **Recommendation**: **USE** — Simplifies dictionary map output mapping.
 
 
 ---
@@ -1163,6 +1193,12 @@ graph TD
    - *DIP*: Depends on `IVectorRepository` and `IEmbeddingModel` abstractions.
    - *KISS*: Uses standard 768-dimensional float arrays stored in native PostgreSQL `vector` columns.
 7. **Open Questions**: What is the optimal chunk size (e.g. 512 tokens with 64-token overlap) to maximize recall precision during real-time voice RAG queries?
+8. **Spring AI Integration Analysis**:
+   - **Problem (Without Spring AI)**: Writing custom text splitters, manual `text-embedding-004` API calls, and raw JDBC `pgvector` insert SQL.
+   - **Spring AI Solution**: Use `TokenTextSplitter` for semantic chunking and `PgVectorStore` (`spring-ai-starter-vector-store-pgvector`) for auto-indexing embeddings into PostgreSQL `vector_store`.
+   - **Benefit vs. Current Design**: Replaces ~200 lines of custom chunking, embedding HTTP calls, and SQL insert queries with standard Spring AI ETL pipeline abstractions (`Reader` $\rightarrow$ `TokenTextSplitter` $\rightarrow$ `PgVectorStore`).
+   - **Migration Impact**: MEDIUM — Requires aligning table schemas with `PgVectorStore` auto-configuration.
+   - **Recommendation**: **USE** — Major reduction in vector DB boilerplate and embedding management.
 
 
 ---
@@ -1222,6 +1258,12 @@ graph TD
    - *DIP*: Depends on `IOcrEngine` abstraction.
    - *KISS*: Returns clean plain text string strips of control characters.
 7. **Open Questions**: How should multi-column layout scanned PDFs be parsed to maintain correct reading order during text extraction?
+8. **Spring AI Integration Analysis**:
+   - **Problem (Without Spring AI)**: Direct dependency on raw Apache Tika and Tesseract C++ JNI calls.
+   - **Spring AI Solution**: Use `TikaDocumentReader` from `spring-ai-core`.
+   - **Benefit vs. Current Design**: Provides standardized `Document` abstraction for extracted text and metadata across all PDF, DOCX, and scanned image types.
+   - **Migration Impact**: LOW — Replaces manual Tika initialization code inside sub-agent.
+   - **Recommendation**: **USE** — Standardizes document text extraction across the platform.
 
 
 ---
@@ -1283,6 +1325,12 @@ graph TD
    - *DIP*: Depends on `RagSearchAgent` abstraction.
    - *KISS*: Calls `ragSearchAgent.search(query)` and wraps result in tool response map.
 7. **Open Questions**: How should search results be formatted if no relevant passages exceed the minimum similarity score?
+8. **Spring AI Integration Analysis**:
+   - **Problem (Without Spring AI)**: Manual vector query parameter preparation and custom result mapping.
+   - **Spring AI Solution**: Delegate query execution to `PgVectorStore.similaritySearch(SearchRequest.query(q).withTopK(3))`.
+   - **Benefit vs. Current Design**: Clean $O(1)$ vector similarity lookup using Spring AI's unified `VectorStore` port.
+   - **Migration Impact**: LOW — Operates inside existing tool handler strategy method.
+   - **Recommendation**: **USE** — Clean vector store query abstraction.
 
 
 ---
@@ -1303,6 +1351,12 @@ graph TD
    - *DIP*: Depends on `pgvector` repository abstraction.
    - *KISS*: Returns top-3 text snippets concatenated into a single string for tool response payload.
 7. **Open Questions**: How to balance vector similarity scoring when user documents contain conflicting information across different uploaded file versions?
+8. **Spring AI Integration Analysis**:
+   - **Problem (Without Spring AI)**: Custom embedding generation using `text-embedding-004` and custom `pgvector` SQL cosine distance (`<=>`) query execution.
+   - **Spring AI Solution**: Use `PgVectorStore` paired with `QuestionAnswerAdvisor` or direct `similaritySearch` with filter expressions.
+   - **Benefit vs. Current Design**: Replaces manual SQL queries and vector distance calculations with declarative Spring AI `VectorStore` queries and built-in RAG advisors.
+   - **Migration Impact**: MEDIUM — Aligns RAG search engine bean with `PgVectorStore`.
+   - **Recommendation**: **USE** — Eliminates custom vector search boilerplate.
 
 
 ---
@@ -1369,6 +1423,12 @@ graph TD
    - *DIP*: Depends on `IVectorGuardrailRepository` abstraction.
    - *KISS*: Reuses existing `pgvector` database infrastructure.
 7. **Open Questions**: What similarity threshold (e.g. 0.85 cosine score) yields the optimal balance between false positive safety triggers and actual injection detection?
+8. **Spring AI Integration Analysis**:
+   - **Problem (Without Spring AI)**: Manual `pgvector` similarity query execution for toxic/jailbreak prompt vectors.
+   - **Spring AI Solution**: Implement Spring AI `SafeGuardAdvisor` or query `PgVectorStore` for threat vector similarity thresholds (<2ms).
+   - **Benefit vs. Current Design**: Integrates content moderation seamlessly into `ChatClient` advisor chains (`.advisors(new SafeGuardAdvisor(...))`).
+   - **Migration Impact**: LOW — Extends existing guardrail strategy.
+   - **Recommendation**: **USE** — Provides declarative safety advisor wrapping around LLM calls.
 
 
 ---
@@ -1432,6 +1492,12 @@ graph TD
    - *DIP*: Depends on `SubmissionRepository` interface.
    - *KISS*: Writes evaluated score and summary Markdown text directly to database `Submission` row.
 7. **Open Questions**: Should candidate score calculations support weighted custom formula expressions defined by form creators?
+8. **Spring AI Integration Analysis**:
+   - **Problem (Without Spring AI)**: Manual transcript concatenation, prompt formatting, and raw JSON parsing of candidate evaluation scores.
+   - **Spring AI Solution**: `ChatClient.prompt().system(evalRubricPrompt).user(transcript).entity(CandidateEvaluationReport.class)`.
+   - **Benefit vs. Current Design**: Automatically deserializes evaluation scores (0-100), feedback tags, and summary points into strongly typed Java Records with zero custom JSON parsing.
+   - **Migration Impact**: LOW — Async post-session worker bean.
+   - **Recommendation**: **USE** — Excellent fit for structured post-session evaluation reporting.
 
 
 ---
@@ -1469,6 +1535,12 @@ graph TD
    - *DIP*: Injects abstract `IQuotaCacheRepository` interface.
    - *KISS*: Uses single Redis Lua script execution per usage event to eliminate race conditions.
 7. **Open Questions**: When a workspace exhausts its credit quota mid-interview, should the agent gracefully terminate the session with a polite voice message or allow a small buffer overage?
+8. **Spring AI Integration Analysis**:
+   - **Problem (Without Spring AI)**: Manually tracking token usage by parsing raw API response metadata.
+   - **Spring AI Solution**: Utilize Spring AI's native **Micrometer Observation API** integration (`gen_ai.client.token.usage` metrics).
+   - **Benefit vs. Current Design**: Automatically records prompt, completion, and total token usage per LLM call via Spring Boot Actuator/Micrometer without manual metadata parsing.
+   - **Migration Impact**: LOW — Binds Micrometer metrics listener to `TokenMeteringAgent` event bus.
+   - **Recommendation**: **USE** — Automated token observability and billing metric emission.
 
 
 ---
@@ -1598,6 +1670,7 @@ The following decision matrix provides a comprehensive side-by-side comparison o
 
 | Architectural Component | Selected Technology | Alternative Technology | Decision Rationale & Architectural Comparison |
 | :--- | :--- | :--- | :--- |
+| **Enterprise AI Framework** | **Spring AI (Mode 2 REST & RAG ETL)** | Custom HTTP REST Clients / Raw SDKs | **Selected**: Spring AI (`spring-ai-starter-model-google-genai` & `spring-ai-starter-vector-store-pgvector`) provides portable `ChatClient`, `BeanOutputConverter`, `PgVectorStore`, and Micrometer token observability for REST and RAG tasks. Eliminates boilerplate JSON parsing and raw SQL vector queries.<br>**Alternative**: Custom HTTP REST clients require manual Jackson deserialization, custom prompt format builders, and manual vector DB query mappers. |
 | **Vector Storage & Search** | **PostgreSQL `pgvector` (HNSW Index)** | Pinecone / Qdrant / Weaviate | **Selected**: `pgvector` keeps relational form metadata, submissions, and vector embeddings in a single ACID-compliant database. Sub-5ms cosine search (`<=>`) over HNSW indexes meets voice latency requirements while eliminating external vector DB licensing, synchronization pipelines, and ops complexity.<br>**Alternative**: Standalone vector DBs require complex dual-write transaction managers and sync pipelines to keep relational metadata aligned with vector IDs. |
 | **Session & Goal State RAM** | **Redis 7.2 (`opsForHash()` & Lua)** | Hazelcast / Apache Ignite | **Selected**: Redis provides sub-millisecond RAM read/write speed for session presence, VAD silence counters, and interview goal checklists. Redis Lua scripts enable atomic multi-key quota updates during high-frequency token metering. Native Spring Session integration simplifies cluster failover.<br>**Alternative**: Hazelcast introduces larger memory overhead and complex cluster topology management for simple session key-value storage. |
 | **Live Multimodal Voice Engine** | **Google Gemini 3.1 Live API** | OpenAI Realtime API / ElevenLabs | **Selected**: Gemini 3.1 Live API supports native WebSocket audio-to-audio streaming (~300ms latency), direct function tool calling, custom voice selection, and significantly lower token pricing ($0.0006/min vs $0.06/min for OpenAI Realtime).<br>**Alternative**: OpenAI Realtime API is 10x more expensive per minute and lacks native 24kHz audio sampling capabilities available in Gemini Live. |
@@ -1648,3 +1721,106 @@ Architectural governance across the reForm agent ecosystem strictly enforces the
 ---
 
 *End of Master Design Document.*
+
+---
+
+## 7. Real Implementation Status Audit (Honest Codebase Check)
+
+> This section audits every tool handler and agent against the **actual source code** to give an honest picture of what works, what is boilerplate, and what has not been built yet.
+
+### Legend
+| Symbol | Meaning |
+|:---:|:---|
+| ✅ **REAL** | Full business logic implemented. Actually does something meaningful in production. |
+| 🟡 **BOILERPLATE** | Handler exists, routes correctly, logs the call, but returns a hardcoded/mock response. No real service is wired. |
+| ❌ **NOT BUILT** | No Java class exists in the codebase at all. |
+
+---
+
+### 7.1 Universal Tools
+
+| Tool Handler | Status | Explanation |
+|:---|:---:|:---|
+| `EndSessionToolHandler` | ✅ **REAL** | Fully implemented 3-stage teardown: (1) sends `SESSION_ENDED` JSON frame to browser, (2) spawns Virtual Thread with 2s delay to close Socket 2 (Gemini WSS) and Socket 1 (Browser WSS). Actually stops billing and clears hardware. |
+| `SearchUserDocumentToolHandler` | 🟡 **BOILERPLATE** | Parses the `query` arg and logs it, but returns a hardcoded string `"Document context retrieved for: " + query`. **No pgvector or RAG service is wired.** The `RagSearchAgent` service behind this does not exist yet. |
+
+---
+
+### 7.2 Builder Tools
+
+| Tool Handler | Status | Explanation |
+|:---|:---:|:---|
+| `ModifyFormLayoutToolHandler` | ✅ **REAL** | Publishes a `FormLayoutModificationEvent` to Spring's event bus, which `LayoutAgent` catches asynchronously to generate block JSON via Gemini 3.6 Flash and persist to PostgreSQL. The full chain works end-to-end. |
+| `ConfigureFillerPersonaToolHandler` | ✅ **REAL** | Reads `formId` from session, looks up or creates a `FormAiAgentProfile` in PostgreSQL, updates `voiceName`, `temperature`, and `systemPromptTemplate`, then saves via `FormAiAgentProfileRepository`. Real DB write. |
+| `PublishFormToolHandler` | ✅ **REAL** | Reads `formId`, calls `formRepository.findById()`, sets `form.setStatus(FormStatus.PUBLISHED)`, and saves. Uses form slug if available. Real PostgreSQL update. |
+| `GenerateContentFromDocToolHandler` | 🟡 **BOILERPLATE** | Parses `fileId`, `contentType`, and `count` args, logs them. Returns a mock message like `"Generated 5 QUIZ_QUESTIONS from document X"`. **No Gemini Vision API or document retrieval is wired.** |
+
+---
+
+### 7.3 Filler Tools
+
+| Tool Handler | Status | Explanation |
+|:---|:---:|:---|
+| `SaveFieldResponseToolHandler` | 🟡 **BOILERPLATE** | Parses `fieldId`, `value`, and `confidence` args, logs them. Returns `SAVED` status. **No PostgreSQL Submission entity write is wired.** |
+| `EvaluateResponseToolHandler` | 🟡 **BOILERPLATE** | Parses `fieldId`, `score`, `feedback`, `tags`. Returns `EVALUATED` status with those values. **No scoring service or DB persistence is wired.** |
+| `SkipQuestionToolHandler` | 🟡 **BOILERPLATE** | Parses `fieldId` and `reason`. Returns `SKIPPED` status. **No question-pointer advancement or DB write is wired.** |
+| `LookupFormProgressToolHandler` | 🟡 **BOILERPLATE** | Returns hardcoded mock values: `totalFields=10`, `answeredFields=5`, `percentComplete=50`. **No Redis or PostgreSQL progress query is wired.** |
+| `FlagForHumanReviewToolHandler` | 🟡 **BOILERPLATE** | Parses `fieldId`, `priority`, `reason`. Returns `FLAGGED` status. **No notification, DB flag record, or dashboard push is wired.** |
+
+---
+
+### 7.4 File Tools
+
+| Tool Handler | Status | Explanation |
+|:---|:---:|:---|
+| `RequestFileUploadToolHandler` | ✅ **REAL** | Parses `label` and `acceptedTypes`, then **actively pushes** a `FILE_UPLOAD_REQUESTED` JSON frame to the browser via WebSocket. The browser receives this frame and renders an upload dropzone. The WS push logic is real and wired via `WebSocketSessionUtils`. |
+| `AnalyzeUploadedFileToolHandler` | 🟡 **BOILERPLATE** | Parses `fileId` and `analysisType`. Returns a mock string `"File X analyzed successfully"`. **No Gemini Vision API or Apache Tika OCR call is wired.** |
+| `ExtractStructuredDataToolHandler` | 🟡 **BOILERPLATE** | Parses `fileId` and `fieldsToExtract`. Returns `EXTRACTED` status echoing back the input fields. **No OCR pipeline or structured extraction service is wired.** |
+
+---
+
+### 7.5 Audio Tools
+
+| Tool Handler | Status | Explanation |
+|:---|:---:|:---|
+| `SaveAudioRecordingToolHandler` | 🟡 **BOILERPLATE** | Parses `scope`, `label`, `retentionDays`. Returns `RECORDING_SAVED` status. **No S3 upload, no audio byte access, no filesystem write is wired.** |
+| `SaveSessionTranscriptToolHandler` | 🟡 **BOILERPLATE** | Parses `includeTimestamps`, `includeEvaluation`. Returns `TRANSCRIPT_SAVED` status. **No PostgreSQL transcript entity write is wired.** |
+
+---
+
+### 7.6 UI Tools
+
+| Tool Handler | Status | Explanation |
+|:---|:---:|:---|
+| `RenderDynamicUIToolHandler` | ✅ **REAL** | Parses `componentType`, `options`, `prompt`, then **actively pushes** a `DYNAMIC_UI_REQUESTED` JSON frame to the browser via WebSocket. The browser receives this and is expected to render the component. WS push is real. |
+| `SendNotificationToolHandler` | 🟡 **BOILERPLATE** | Parses `channel`, `priority`, `title`, `body`. Returns `NOTIFICATION_SENT`. **No email, Slack webhook, dashboard push, or WebSocket alert is wired.** |
+
+---
+
+### 7.7 Agent-Level Status
+
+| Agent | Status | Explanation |
+|:---|:---:|:---|
+| `LayoutAgent` | ✅ **REAL** | `@Async @EventListener` on `FormLayoutModificationEvent`. Maps intent to block entities and saves to PostgreSQL. End-to-end chain works (Mode 4 tool call → event → Gemini Flash → DB write). |
+| `GuardrailAgent` | ❌ **NOT BUILT** | Only an event class `GuardrailValidationEvent.java` exists. No `@Component` class, no pgvector call. |
+| `MemoryGoalAgent` | ❌ **NOT BUILT** | Only a `RagQueryEvent.java` event exists. No Redis `opsForHash()` goal tracking class. |
+| `BillingAgent` | ❌ **NOT BUILT** | `BillingUsageEvent.java` event class exists. No VAD meter or credit deduction component. |
+| `EvaluationAgent` | ❌ **NOT BUILT** | `SessionEndedEvent.java` exists. No post-session scoring service wired to it. |
+| `RagSearchAgent` | ❌ **NOT BUILT** | Referenced in `SearchUserDocumentToolHandler` comments only. No pgvector query service class exists. |
+
+---
+
+### 7.8 Summary Scorecard
+
+| Category | ✅ Real | 🟡 Boilerplate | ❌ Not Built |
+|:---|:---:|:---:|:---:|
+| Universal Tools (2) | 1 | 1 | 0 |
+| Builder Tools (4) | 3 | 1 | 0 |
+| Filler Tools (5) | 0 | 5 | 0 |
+| File Tools (3) | 1 | 2 | 0 |
+| Audio Tools (2) | 0 | 2 | 0 |
+| UI Tools (2) | 1 | 1 | 0 |
+| **Agents (6)** | **1** | **0** | **5** |
+| **TOTAL** | **7** | **12** | **5** |
+
+> **Bottom line**: The routing infrastructure (`ToolCallRegistry`, `IToolCallHandler`) is solid and production-ready. 7 tool handlers do real work. 12 handlers correctly route the call, parse args, and return valid `toolResponse` frames to Gemini — but return mock/no-op data for the actual side-effect. All 5 major background agents are event-ready (events exist) but the `@Component` agent classes themselves have not been built yet.

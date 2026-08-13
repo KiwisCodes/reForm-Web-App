@@ -521,14 +521,22 @@ export default function Mode4TesterPage() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent">
-              reForm Mode 4 Live Voice Tester
+              reForm AI Voice & Chat Tester
             </h1>
-            <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
-              Gemini 3.1 Flash Live
+            <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full border ${
+              selectedMode === "MODE_4"
+                ? "bg-blue-500/20 text-blue-300 border-blue-500/30"
+                : selectedMode === "MODE_3"
+                ? "bg-purple-500/20 text-purple-300 border-purple-500/30"
+                : "bg-pink-500/20 text-pink-300 border-pink-500/30"
+            }`}>
+              {selectedMode === "MODE_4" && "⚡ Mode 4: Gemini 3.1 Flash Live"}
+              {selectedMode === "MODE_3" && "🎙️ Mode 3: Deepgram + Cartesia"}
+              {(selectedMode as string) === "MODE_2" && "💬 Mode 2: Gemini 3.6 Flash REST"}
             </span>
           </div>
           <p className="text-sm text-slate-400 mt-1">
-            Real-Time Audio-to-Audio Conversational Voice Tester
+            Real-Time Conversational AI Strategy Tester (Mode 2 / Mode 3 / Mode 4)
           </p>
         </div>
 
@@ -595,19 +603,59 @@ export default function Mode4TesterPage() {
             </h2>
             <div className="space-y-3">
               <div>
-                <label className="text-[11px] text-slate-400 block mb-1">Voice Architecture Mode</label>
-                <select
-                  value={selectedMode}
-                  onChange={(e) => {
-                    const newMode = e.target.value as "MODE_4" | "MODE_3";
-                    setSelectedMode(newMode);
-                    setWsUrl(`ws://localhost:8080/ws/v1/voice?token=test_token&mode=${newMode}&formId=11111111-1111-1111-1111-111111111111`);
-                  }}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500 transition mb-3"
-                >
-                  <option value="MODE_4">Mode 4: Native Live Voice (Gemini Live ~300ms)</option>
-                  <option value="MODE_3">Mode 3: Cascaded Voice (Deepgram+Cartesia ~700ms)</option>
-                </select>
+                <label className="text-[11px] font-semibold text-slate-300 block mb-2">
+                  Select AI Architecture Mode
+                </label>
+                <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-950 border border-slate-800 rounded-xl mb-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedMode("MODE_4");
+                      setWsUrl(`ws://localhost:8080/ws/v1/voice?token=test_token&mode=MODE_4&formId=11111111-1111-1111-1111-111111111111`);
+                    }}
+                    className={`py-2 px-2 text-[11px] font-bold rounded-lg transition ${
+                      selectedMode === "MODE_4"
+                        ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
+                    }`}
+                  >
+                    ⚡ Mode 4
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedMode("MODE_3");
+                      setWsUrl(`ws://localhost:8080/ws/v1/voice?token=test_token&mode=MODE_3&formId=11111111-1111-1111-1111-111111111111`);
+                    }}
+                    className={`py-2 px-2 text-[11px] font-bold rounded-lg transition ${
+                      selectedMode === "MODE_3"
+                        ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
+                    }`}
+                  >
+                    🎙️ Mode 3
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newMode = "MODE_2" as any;
+                      setSelectedMode(newMode);
+                      setWsUrl(`ws://localhost:8080/ws/v1/voice?token=test_token&mode=MODE_2&formId=11111111-1111-1111-1111-111111111111`);
+                    }}
+                    className={`py-2 px-2 text-[11px] font-bold rounded-lg transition ${
+                      (selectedMode as string) === "MODE_2"
+                        ? "bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
+                    }`}
+                  >
+                    💬 Mode 2
+                  </button>
+                </div>
+                <div className="text-[10px] text-slate-400 bg-slate-950/60 p-2 rounded-lg border border-slate-800/80 mb-3">
+                  {selectedMode === "MODE_4" && "⚡ Mode 4: Native Live Voice Stream (Gemini 3.1 Flash Live ~300ms)"}
+                  {selectedMode === "MODE_3" && "🎙️ Mode 3: Cascaded Multi-Vendor Pipeline (Deepgram STT → Gemini REST → Cartesia TTS ~700ms)"}
+                  {(selectedMode as string) === "MODE_2" && "💬 Mode 2: Text Chat Copilot (Gemini 3.6 Flash Stateless REST)"}
+                </div>
               </div>
 
               <div>

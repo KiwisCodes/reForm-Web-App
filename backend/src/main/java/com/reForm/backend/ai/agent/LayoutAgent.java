@@ -1,6 +1,8 @@
 package com.reForm.backend.ai.agent;
 
+import com.reForm.backend.ai.dto.AiConversationalBlockDto;
 import com.reForm.backend.ai.event.FormLayoutModificationEvent;
+import com.reForm.backend.ai.factory.BlockFactory;
 import com.reForm.backend.form.entity.Form;
 import com.reForm.backend.form.entity.block.AbstractBlock;
 import com.reForm.backend.form.entity.block.conversationalBlock.ConversationalBlock;
@@ -39,6 +41,7 @@ import java.util.UUID;
 public class LayoutAgent {
 
     private final FormRepository formRepository;
+    private final BlockFactory blockFactory;
 
     /**
      * ASYNCHRONOUS EVENT LISTENER: FormLayoutModificationEvent
@@ -95,7 +98,7 @@ public class LayoutAgent {
 
     /**
      * HELPER: Maps user intent strings to concrete AbstractBlock instances.
-     * Integrates with Mode 2 schema creation logic.
+     * Integrates with Mode 2 schema creation logic and BlockFactory.
      */
     private AbstractBlock createBlockFromIntent(String intent) {
         if (intent.contains("CONTACT") || intent.contains("EMAIL")) {
@@ -113,13 +116,13 @@ public class LayoutAgent {
             return block;
 
         } else if (intent.contains("CONVERSATIONAL") || intent.contains("INTERVIEW")) {
-            ConversationalBlock block = new ConversationalBlock();
-            block.setLabel("AI Verbal Interview Block");
-            block.setPrompt("Evaluate candidate background and key competencies.");
-            block.setPersona("Professional Technical Recruiter");
-            block.setMaxQuestions(5);
-            block.setRequired(true);
-            return block;
+            AiConversationalBlockDto dto = new AiConversationalBlockDto();
+            dto.setLabel("AI Verbal Interview Block");
+            dto.setPrompt("Evaluate candidate background and key competencies.");
+            dto.setPersona("Professional Technical Recruiter");
+            dto.setMaxQuestions(5);
+            dto.setRequired(true);
+            return blockFactory.build(dto);
 
         } else {
             // Default Short Text Block fallback for general intents

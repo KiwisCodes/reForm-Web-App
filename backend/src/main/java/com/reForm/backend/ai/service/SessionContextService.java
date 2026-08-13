@@ -1,7 +1,10 @@
 package com.reForm.backend.ai.service;
 
 import com.reForm.backend.ai.port.IAiModelProviderStrategy;
+import com.reForm.backend.ai.strategy.block.BlockExecutionRegistry;
+import com.reForm.backend.ai.strategy.block.IBlockExecutionStrategy;
 import com.reForm.backend.form.entity.FormAiAgentProfile;
+import com.reForm.backend.form.entity.block.AbstractBlock;
 import com.reForm.backend.form.entity.block.conversationalBlock.ConversationalBlock;
 import com.reForm.backend.form.repository.FormAiAgentProfileRepository;
 import com.reForm.backend.user.entity.Role;
@@ -48,6 +51,7 @@ public class SessionContextService {
 
     private final List<IAiModelProviderStrategy> modelStrategies;
     private final FormAiAgentProfileRepository profileRepository;
+    private final BlockExecutionRegistry blockExecutionRegistry;
 
     /**
      * Overloaded helper method for 3-parameter calls.
@@ -66,7 +70,11 @@ public class SessionContextService {
      * @return Map structure representing Google's BidiGenerateContentSetup JSON payload
      */
     public Map<String, Object> buildSetupContext(String userId, Role role, String formId, String requestedModelKey) {
-        log.info("Building setup context for userId: {}, role: {}, formId: {}, modelKey: {}", userId, role, formId, requestedModelKey);
+        return buildSetupContext(userId, role, formId, requestedModelKey, null);
+    }
+
+    public Map<String, Object> buildSetupContext(String userId, Role role, String formId, String requestedModelKey, AbstractBlock activeBlock) {
+        log.info("Building setup context for userId: {}, role: {}, formId: {}, modelKey: {}, activeBlock: {}", userId, role, formId, requestedModelKey, activeBlock != null ? activeBlock.getId() : "null");
 
         // Step 1: Query form agent profile from DB if formId is present
         FormAiAgentProfile profile = null;
@@ -93,19 +101,16 @@ public class SessionContextService {
         String modelId = strategy != null ? strategy.getModelId() : "models/gemini-3.1-flash-live-preview";
         Map<String, Object> generationConfig = strategy != null ? strategy.getGenerationConfig() : Map.of();
 
-        // Step 3: Compile persona system instruction dynamically using Hybrid Pattern
-        String systemInstruction = compileSystemInstruction(role, profile, null);
+        // Step 3: Compile persona system instruction dynamically using 3-Level Cascade & Strategy Pattern
+        String systemInstruction = compileSystemInstruction(role, profile, activeBlock);
 
-        // Step 4: Build tool declarations (18 tools gated by role + context)
-        // hasAudioCapability=true because voice sessions (Mode 3/4) always support audio
-        List<Map<String, Object>> tools = buildToolDeclarations(role, true, true);
+        // Step 4: Build tool declarations (gated by role + context + active block whitelist)
+        List<Map<String, Object>> tools = buildToolDeclarations(role, true, true, activeBlock);
 
-        // Step 5: Assemble setup payload Map according to Google's official Gemini Live specification
         // Step 5: Assemble setup payload Map according to Google's official Gemini Live specification
         Map<String, Object> setupMap = new HashMap<>();
         setupMap.put("model", modelId);
         
-        // Configure voice and generation parameters dynamically from DB profile or default
         Map<String, Object> finalGenConfig = new HashMap<>();
         if (generationConfig != null && !generationConfig.isEmpty()) {
             finalGenConfig.putAll(generationConfig);
@@ -113,11 +118,19 @@ public class SessionContextService {
             finalGenConfig.put("responseModalities", List.of("AUDIO"));
         }
 
-        // Apply voice choice from DB profile if configured (e.g. "Puck", "Kore", "Charon", "Aoede", "Fenrir")
-        if (profile != null && profile.getVoiceName() != null && !profile.getVoiceName().isBlank()) {
+        // Step 6: Resolve Voice Cascade (Level 3 Block Voice > Level 2 Profile Voice > Level 1 Baseline)
+        String voiceName = null;
+        if (activeBlock != null) {
+            voiceName = blockExecutionRegistry.resolve(activeBlock.getType()).resolveVoiceName(activeBlock);
+        }
+        if (voiceName == null && profile != null && profile.getVoiceName() != null && !profile.getVoiceName().isBlank()) {
+            voiceName = profile.getVoiceName();
+        }
+
+        if (voiceName != null && !voiceName.isBlank()) {
             finalGenConfig.put("speechConfig", Map.of(
                 "voiceConfig", Map.of(
-                    "prebuiltVoiceConfig", Map.of("voiceName", profile.getVoiceName())
+                    "prebuiltVoiceConfig", Map.of("voiceName", voiceName)
                 )
             ));
         }
@@ -154,57 +167,80 @@ public class SessionContextService {
      * Priority 3: Production Role-based baseline template fallback
      */
     public String compileSystemInstruction(Role role, FormAiAgentProfile profile, ConversationalBlock activeBlock) {
+        return compileSystemInstruction(role, profile, (AbstractBlock) activeBlock);
+    }
+
+    /**
+     * Compiles persona system instructions using 3-Level Cascade + SOLID Strategy Pattern:
+     * Priority 1 (Level 3): Active block level persona/prompt override & strategy goal compilation
+     * Priority 2 (Level 2): FormAiAgentProfile level baseline template from DB (configured by Form Builder / Mode 2)
+     * Priority 3 (Level 1): Production Role-based baseline template fallback
+     */
+    public String compileSystemInstruction(Role role, FormAiAgentProfile profile, AbstractBlock activeBlock) {
         String nl = System.lineSeparator();
+        String basePrompt = null;
 
-        // Priority 1: Active ConversationalBlock level override
-        if (activeBlock != null && activeBlock.getPersona() != null && !activeBlock.getPersona().isBlank()) {
-            String prompt = activeBlock.getPersona();
-            if (activeBlock.getPrompt() != null && !activeBlock.getPrompt().isBlank()) {
-                prompt += nl + nl + "TARGET QUESTIONS & GOALS:" + nl + activeBlock.getPrompt();
+        // Level 3 / Priority 1: Active Block level override
+        if (activeBlock instanceof ConversationalBlock convBlock && convBlock.getPersona() != null && !convBlock.getPersona().isBlank()) {
+            basePrompt = convBlock.getPersona();
+            if (convBlock.getPrompt() != null && !convBlock.getPrompt().isBlank()) {
+                basePrompt += nl + nl + "TARGET QUESTIONS & GOALS:" + nl + convBlock.getPrompt();
             }
-            return prompt;
         }
 
-        // Priority 2: FormAiAgentProfile level default template from PostgreSQL (Saved via Mode 2 meta-prompting)
-        if (profile != null && profile.getSystemPromptTemplate() != null && !profile.getSystemPromptTemplate().isBlank()) {
-            return profile.getSystemPromptTemplate();
+        // Level 2 / Priority 2: FormAiAgentProfile default template from DB
+        if (basePrompt == null && profile != null && profile.getSystemPromptTemplate() != null && !profile.getSystemPromptTemplate().isBlank()) {
+            basePrompt = profile.getSystemPromptTemplate();
         }
 
-        // Priority 3: Production Role-based baseline template fallbacks
-        if (role == Role.FORM_BUILDER) {
-            return "[ROLE & PERSONA]" + nl +
-                   "You are an expert AI Form Architect Co-Pilot assisting a Form Creator in real time over voice." + nl + nl +
-                   "[CAPABILITIES & TOOL CALLING]" + nl +
-                   "You have access to the following tools:" + nl +
-                   "- `modifyFormLayout`: Whenever the user asks to add, remove, or edit form fields, execute this tool." + nl +
-                   "- `configureFillerPersona`: When the user describes how the AI should behave toward form fillers (tone, voice, temperature), save it." + nl +
-                   "- `publishForm`: When the user says they are done and wants to publish, call this tool." + nl +
-                   "- `generateContentFromDocument`: When the user uploads a document and wants questions generated from it, call this tool." + nl +
-                   "- `requestFileUpload`: If you need a document from the user (job description, syllabus), request an upload." + nl +
-                   "- `analyzeUploadedFile`: After a file is uploaded, analyze its contents to discuss or generate questions." + nl +
-                   "- `endSession`: When the user says goodbye or is finished building, call this to gracefully end the session." + nl + nl +
-                   "[VOICE CONVERSATION GUIDELINES]" + nl +
-                   "1. Keep spoken responses short, natural, and under 2 sentences." + nl +
-                   "2. Acknowledge user requests immediately and explain what field was added or updated on the canvas.";
+        // Level 1 / Priority 3: Role-based baseline fallbacks
+        if (basePrompt == null) {
+            if (role == Role.FORM_BUILDER) {
+                basePrompt = "[ROLE & PERSONA]" + nl +
+                       "You are an expert AI Form Architect Co-Pilot assisting a Form Creator in real time over voice." + nl + nl +
+                       "[CAPABILITIES & TOOL CALLING]" + nl +
+                       "You have access to the following tools:" + nl +
+                       "- `modifyFormLayout`: Whenever the user asks to add, remove, or edit form fields, execute this tool." + nl +
+                       "- `configureFillerPersona`: When the user describes how the AI should behave toward form fillers (tone, voice, temperature), save it." + nl +
+                       "- `publishForm`: When the user says they are done and wants to publish, call this tool." + nl +
+                       "- `generateContentFromDocument`: When the user uploads a document and wants questions generated from it, call this tool." + nl +
+                       "- `requestFileUpload`: If you need a document from the user (job description, syllabus), request an upload." + nl +
+                       "- `analyzeUploadedFile`: After a file is uploaded, analyze its contents to discuss or generate questions." + nl +
+                       "- `endSession`: When the user says goodbye or is finished building, call this to gracefully end the session." + nl + nl +
+                       "[VOICE CONVERSATION GUIDELINES]" + nl +
+                       "1. Keep spoken responses short, natural, and under 2 sentences." + nl +
+                       "2. Acknowledge user requests immediately and explain what field was added or updated on the canvas.";
+            } else {
+                basePrompt = "[ROLE & PERSONA]" + nl +
+                       "You are an AI Interviewer conducting an interactive voice interview for candidates." + nl + nl +
+                       "[CAPABILITIES & TOOL CALLING]" + nl +
+                       "You have access to the following tools:" + nl +
+                       "- `saveFieldResponse`: After the user answers a question, save their validated response immediately." + nl +
+                       "- `evaluateResponse`: Score the user's answer for quality, correctness, or urgency." + nl +
+                       "- `skipQuestion`: If the user declines to answer or the question doesn't apply, skip it." + nl +
+                       "- `lookupFormProgress`: Check how many questions remain and announce progress to the user." + nl +
+                       "- `flagForHumanReview`: Flag ambiguous, suspicious, or critical answers for the form owner to review." + nl +
+                       "- `requestFileUpload`: If you need a file from the user (photo, document, ID), request an upload." + nl +
+                       "- `renderDynamicUI`: For multiple-choice or rating questions, render clickable buttons or stars." + nl +
+                       "- `endSession`: When the user says goodbye or all questions are answered, call this to end the session." + nl + nl +
+                       "[CONVERSATIONAL GUIDELINES]" + nl +
+                       "1. Speak naturally, politely, and keep responses concise (under 25 words per turn)." + nl +
+                       "2. Ask questions step-by-step to evaluate the candidate's background." + nl +
+                       "3. If the candidate interrupts, stop speaking immediately and listen to their response." + nl +
+                       "4. After every 5 questions, use `lookupFormProgress` and announce how many questions remain.";
+            }
         }
 
-        return "[ROLE & PERSONA]" + nl +
-               "You are an AI Interviewer conducting an interactive voice interview for candidates." + nl + nl +
-               "[CAPABILITIES & TOOL CALLING]" + nl +
-               "You have access to the following tools:" + nl +
-               "- `saveFieldResponse`: After the user answers a question, save their validated response immediately." + nl +
-               "- `evaluateResponse`: Score the user's answer for quality, correctness, or urgency." + nl +
-               "- `skipQuestion`: If the user declines to answer or the question doesn't apply, skip it." + nl +
-               "- `lookupFormProgress`: Check how many questions remain and announce progress to the user." + nl +
-               "- `flagForHumanReview`: Flag ambiguous, suspicious, or critical answers for the form owner to review." + nl +
-               "- `requestFileUpload`: If you need a file from the user (photo, document, ID), request an upload." + nl +
-               "- `renderDynamicUI`: For multiple-choice or rating questions, render clickable buttons or stars." + nl +
-               "- `endSession`: When the user says goodbye or all questions are answered, call this to end the session." + nl + nl +
-               "[CONVERSATIONAL GUIDELINES]" + nl +
-               "1. Speak naturally, politely, and keep responses concise (under 25 words per turn)." + nl +
-               "2. Ask questions step-by-step to evaluate the candidate's background." + nl +
-               "3. If the candidate interrupts, stop speaking immediately and listen to their response." + nl +
-               "4. After every 5 questions, use `lookupFormProgress` and announce how many questions remain.";
+        // Delegate goal section compilation to BlockExecutionRegistry (Strategy Pattern)
+        if (activeBlock != null) {
+            IBlockExecutionStrategy strategy = blockExecutionRegistry.resolve(activeBlock.getType());
+            String goalSection = strategy.compileGoalSection(activeBlock);
+            if (goalSection != null && !goalSection.isBlank()) {
+                basePrompt += nl + nl + goalSection;
+            }
+        }
+
+        return basePrompt;
     }
 
     /**
@@ -227,6 +263,10 @@ public class SessionContextService {
      * @return List of tool declaration maps for Gemini setup payload
      */
     public List<Map<String, Object>> buildToolDeclarations(Role role, boolean hasDocuments, boolean hasAudioCapability) {
+        return buildToolDeclarations(role, hasDocuments, hasAudioCapability, null);
+    }
+
+    public List<Map<String, Object>> buildToolDeclarations(Role role, boolean hasDocuments, boolean hasAudioCapability, AbstractBlock activeBlock) {
         List<Map<String, Object>> functionDeclarations = new ArrayList<>();
 
         // ═══════════════════════════════════════════════════════════════════════════
@@ -734,11 +774,18 @@ public class SessionContextService {
         ));
 
         // Wrap all declarations into Gemini's expected { "functionDeclarations": [...] } structure
+        List<Map<String, Object>> result = List.of();
         if (!functionDeclarations.isEmpty()) {
-            return List.of(Map.of("functionDeclarations", functionDeclarations));
+            result = List.of(Map.of("functionDeclarations", functionDeclarations));
         }
 
-        return List.of();
+        // Apply active block tool whitelist filtering via Strategy Pattern
+        if (activeBlock != null) {
+            IBlockExecutionStrategy strategy = blockExecutionRegistry.resolve(activeBlock.getType());
+            result = strategy.filterAllowedTools(activeBlock, result);
+        }
+
+        return result;
     }
 
     /**
