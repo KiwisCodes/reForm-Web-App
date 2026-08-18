@@ -559,6 +559,43 @@ public class CascadedVoiceAdapter implements IAiVoiceAdapter {
         private void handleDoneFrame() {
             log.info("[CARTESIA TTS DONE]: Synthesis completed for user: {}", userId);
             clientSession.getAttributes().put("isAiSpeaking", false);
+            Boolean isEnding = (Boolean) clientSession.getAttributes().get("isEndingSession");
+            if (Boolean.TRUE.equals(isEnding)) {
+                log.info("🏁 [MODE 3 GOODBYE FINISHED]: Cartesia TTS done frame received. Executing dynamic graceful teardown.");
+                executeMode3GracefulTeardown(clientSession);
+            }
+        }
+
+        private void executeMode3GracefulTeardown(WebSocketSession clientSession) {
+            if (clientSession.getAttributes().putIfAbsent("teardownExecuted", Boolean.TRUE) != null) {
+                return;
+            }
+
+            Thread.ofVirtual().name("mode3-dynamic-teardown-" + clientSession.getId()).start(() -> {
+                try {
+                    WebSocketSession activeClient = (WebSocketSession) clientSession.getAttributes().get("safeClientSession");
+                    if (activeClient != null && activeClient.isOpen()) {
+                        activeClient.sendMessage(new TextMessage(objectMapper.writeValueAsString(Map.of(
+                            "type", "SESSION_CLOSED",
+                            "status", "SUCCESS"
+                        ))));
+                    }
+
+                    // 300ms flight delay for client Web Audio context playback buffer
+                    Thread.sleep(300);
+
+                    // Close outbound sockets (Deepgram STT & Cartesia TTS)
+                    closeSession(clientSession);
+
+                    // Close client WebSocket (triggers Redis cleanup)
+                    if (clientSession.isOpen()) {
+                        clientSession.close(CloseStatus.NORMAL);
+                        log.info("✅ [MODE 3 CLIENT CLOSED]: Browser WSS closed -> session cleanup complete");
+                    }
+                } catch (Exception e) {
+                    log.error("Error during Mode 3 dynamic graceful teardown", e);
+                }
+            });
         }
 
         private void handleErrorFrame(JsonNode root) {

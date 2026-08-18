@@ -1,7 +1,7 @@
 package com.reForm.backend.ai.websocket;
 
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
+import com.reForm.backend.ai.agent.SessionStateAgent;
+import com.reForm.backend.ai.domain.SessionStateRecoveryResult;
 import com.reForm.backend.ai.domain.VoiceMode;
 import com.reForm.backend.ai.factory.AiVoiceAdapterFactory;
 import com.reForm.backend.ai.port.IAiVoiceAdapter;
@@ -16,6 +16,8 @@ import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.BinaryWebSocketHandler;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -34,6 +36,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * ARCHITECTURE REFACTOR (FACTORY PATTERN & ATTRIBUTE STORAGE):
  * 1. Uses AiVoiceAdapterFactory instead of hardcoding a single IAiVoiceAdapter bean.
  * 2. Stores resolved IAiVoiceAdapter strategy inside session.getAttributes() (Zero extra maps, zero memory leaks).
+ * 3. Integrates SessionStateAgent for Hot Redis RAM state persistence & instant reconnection.
  */
 @Slf4j
 @Component
@@ -42,8 +45,11 @@ public class VoiceSyncWSHandler extends BinaryWebSocketHandler {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // SessionTracker Service (Redis State Management)
+    // SessionTracker Service (Redis Presence Management)
     private final SessionTracker sessionTracker;
+
+    // SessionStateAgent Service (Hot Redis RAM Working Memory & Reconnection)
+    private final SessionStateAgent sessionStateAgent;
 
     // REFACTOR NEW LINE: AiVoiceAdapterFactory resolves matching adapter strategy by VoiceMode (MODE_3 vs MODE_4)
     private final AiVoiceAdapterFactory adapterFactory;
@@ -60,6 +66,10 @@ public class VoiceSyncWSHandler extends BinaryWebSocketHandler {
         // Read identity and mode attributes set by JwtHandshakeInterceptor during handshake
         String userId = (String) session.getAttributes().get("userId");
         Role role = (Role) session.getAttributes().get("role");
+        String formId = (String) session.getAttributes().get("formId");
+        String modelKey = (String) session.getAttributes().get("modelKey");
+        String voiceName = (String) session.getAttributes().get("voiceName");
+        Boolean isReconnect = Boolean.TRUE.equals(session.getAttributes().get("reconnect"));
 
         // Defensive check: Reject unauthenticated connections
         if (userId == null) {
@@ -70,7 +80,7 @@ public class VoiceSyncWSHandler extends BinaryWebSocketHandler {
 
         MDC.put("sessionId", userId);
         try {
-            // REFACTOR NEW LINE: Extract VoiceMode string set during handshake (e.g. MODE_3 vs MODE_4)
+            // Extract VoiceMode string set during handshake (e.g. MODE_3 vs MODE_4)
             String modeStr = (String) session.getAttributes().getOrDefault("mode", "MODE_4");
             VoiceMode mode = VoiceMode.valueOf(modeStr);
 
@@ -78,17 +88,31 @@ public class VoiceSyncWSHandler extends BinaryWebSocketHandler {
             WebSocketSession safeSession = WebSocketSessionUtils.wrapSafeSession(session);
             activeSessions.put(userId, safeSession);
 
-            // REFACTOR NEW LINE: Use factory to resolve strategy adapter based on chosen mode
+            // Resolve strategy adapter based on chosen mode
             IAiVoiceAdapter adapter = adapterFactory.getAdapter(mode);
-
-            // REFACTOR NEW LINE: Store adapter directly in session attributes (eliminates redundant maps & memory leaks)
             safeSession.getAttributes().put("voiceAdapter", adapter);
 
             // Register distributed online presence in Redis
             sessionTracker.registerSession(userId, session.getId());
 
-            // REFACTOR NEW LINE: Start AI stream session using the resolved strategy adapter
+            // Initialize or Rehydrate Hot Redis RAM Working State
+            if (isReconnect) {
+                log.info("🔄 [RECONNECTING SESSION]: Attempting state recovery for session: {}", session.getId());
+                SessionStateRecoveryResult recoveryResult = sessionStateAgent.recoverSessionState(session.getId());
+                safeSession.getAttributes().put("recoveryResult", recoveryResult);
+            } else {
+                sessionStateAgent.initializeSession(
+                    session.getId(), userId, formId,
+                    role != null ? role.name() : "FORM_FILLER",
+                    modelKey, voiceName
+                );
+            }
+
+            // Start AI stream session using the resolved strategy adapter
             adapter.startSession(userId, safeSession);
+
+            // Mark session as ACTIVE
+            sessionStateAgent.markSessionActive(session.getId());
 
             log.info("WebSocket connection established for user: {} (Role: {}, Mode: {}, Session ID: {})", 
                      userId, role, mode, session.getId());
@@ -201,13 +225,16 @@ public class VoiceSyncWSHandler extends BinaryWebSocketHandler {
                 // Remove socket handle from local server RAM map
                 activeSessions.remove(userId);
 
-                // REFACTOR NEW LINE: Retrieve active adapter from session attributes and close stream
+                // Retrieve active adapter from session attributes and close stream
                 IAiVoiceAdapter adapter = (IAiVoiceAdapter) session.getAttributes().get("voiceAdapter");
                 if (adapter != null) {
                     adapter.closeSession(session);
                 }
 
-                // Delete metadata key from Redis
+                // Handle graceful pause for potential reconnect in SessionStateAgent
+                sessionStateAgent.handleDisconnect(session.getId());
+
+                // Delete presence key from Redis
                 sessionTracker.deregisterSession(userId);
 
                 log.info("WebSocket connection closed for user: {} (Status: {})", userId, status);

@@ -1,12 +1,15 @@
 package com.reForm.backend.ai.service;
 
+import com.reForm.backend.ai.domain.TranscriptTurn;
 import com.reForm.backend.ai.event.FormLayoutModificationEvent;
+import com.reForm.backend.ai.event.SessionStateSnapshotEvent;
 import com.reForm.backend.ai.port.IAiVoiceAdapter;
 import com.reForm.backend.ai.tool.registry.ToolCallRegistry;
 import com.reForm.backend.ai.websocket.WebSocketSessionUtils;
 import com.reForm.backend.user.entity.Role;
 import jakarta.websocket.ContainerProvider;
 import jakarta.websocket.WebSocketContainer;
+import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
@@ -31,6 +34,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * GEMINI LIVE VOICE ADAPTER (Outbound WSS Proxy Adapter)
@@ -58,6 +62,7 @@ public class GeminiLiveVoiceAdapter implements IAiVoiceAdapter {
     private final SessionContextService sessionContextService;
     private final ToolCallRegistry toolCallRegistry;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     @Value("${gemini.api.key:DEFAULT_PLATFORM_KEY}")
     private String platformApiKey;
@@ -216,16 +221,76 @@ public class GeminiLiveVoiceAdapter implements IAiVoiceAdapter {
             return;
         }
 
-        extractUserTranscript(activeClient, serverContent);
-        extractAiTranscript(activeClient, serverContent);
+        extractUserTranscript(clientSession, activeClient, serverContent);
+        extractAiTranscript(clientSession, activeClient, serverContent);
         decodeAndForwardPcmAudio(activeClient, serverContent);
         handleBargeInInterruption(activeClient, serverContent);
+        handleTurnComplete(clientSession, serverContent);
+    }
+
+    /**
+     * SUB-HELPER: DYNAMIC TURN COMPLETION & GRACEFUL TEARDOWN
+     * Intercepts Google's turnComplete signal. If endSession was invoked, executes dynamic
+     * audio buffer drain and socket teardown without arbitrary hardcoded sleep delays.
+     */
+    private void handleTurnComplete(WebSocketSession clientSession, JsonNode serverContent) {
+        if (serverContent.path("turnComplete").asBoolean(false)) {
+            Boolean isEnding = (Boolean) clientSession.getAttributes().get("isEndingSession");
+            if (Boolean.TRUE.equals(isEnding)) {
+                WebSocketSession geminiSession = (WebSocketSession) clientSession.getAttributes().get("geminiSession");
+                log.info("🏁 [GEMINI GOODBYE FINISHED]: turnComplete received. Executing dynamic graceful teardown.");
+                executeGracefulTeardown(clientSession, geminiSession);
+            }
+        }
+    }
+
+    /**
+     * DYNAMIC TEARDOWN EXECUTOR (Virtual Thread)
+     * Performs atomic, thread-safe dual socket teardown:
+     * 1. Sends SESSION_CLOSED signal to frontend.
+     * 2. Allows 300ms flight window for client-side Web Audio buffer playback.
+     * 3. Closes Socket 2 (Gemini WSS) to stop billing immediately.
+     * 4. Closes Socket 1 (Browser WSS) to trigger Redis presence deregistration.
+     */
+    private void executeGracefulTeardown(WebSocketSession clientSession, WebSocketSession geminiSession) {
+        if (clientSession.getAttributes().putIfAbsent("teardownExecuted", Boolean.TRUE) != null) {
+            return;
+        }
+
+        Thread.ofVirtual().name("dynamic-teardown-" + clientSession.getId()).start(() -> {
+            try {
+                WebSocketSession activeClient = (WebSocketSession) clientSession.getAttributes().get("safeClientSession");
+                if (activeClient != null && activeClient.isOpen()) {
+                    activeClient.sendMessage(new TextMessage(objectMapper.writeValueAsString(Map.of(
+                        "type", "SESSION_CLOSED",
+                        "status", "SUCCESS"
+                    ))));
+                }
+
+                // 300ms flight delay for client Web Audio context playback buffer
+                Thread.sleep(300);
+
+                // 1. Close Socket 2 (Gemini WSS) -> Stops billing immediately
+                if (geminiSession != null && geminiSession.isOpen()) {
+                    geminiSession.close(CloseStatus.NORMAL);
+                    log.info("✅ [Socket 2 CLOSED] Gemini Live WSS closed -> billing terminated");
+                }
+
+                // 2. Close Socket 1 (Browser WSS) -> Triggers afterConnectionClosed and Redis cleanup
+                if (clientSession.isOpen()) {
+                    clientSession.close(CloseStatus.NORMAL);
+                    log.info("✅ [Socket 1 CLOSED] Browser WSS closed -> session cleanup complete");
+                }
+            } catch (Exception e) {
+                log.error("Error during dynamic graceful teardown for session: {}", clientSession.getId(), e);
+            }
+        });
     }
 
     /**
      * SUB-HELPER: USER TRANSCRIPTION
      */
-    private void extractUserTranscript(WebSocketSession activeClient, JsonNode serverContent) throws IOException {
+    private void extractUserTranscript(WebSocketSession clientSession, WebSocketSession activeClient, JsonNode serverContent) throws IOException {
         if (serverContent.has("inputTranscription")) {
             String userTranscript = serverContent.path("inputTranscription").path("text").asText();
             log.info("[Candidate Transcribed Text]: {}", userTranscript);
@@ -233,13 +298,25 @@ public class GeminiLiveVoiceAdapter implements IAiVoiceAdapter {
                 "type", "TRANSCRIPT_USER",
                 "text", userTranscript
             ))));
+
+            // Publish async turn snapshot to SessionStateAgent
+            AtomicInteger turnCounter = (AtomicInteger) clientSession.getAttributes()
+                    .computeIfAbsent("turnCounter", k -> new AtomicInteger(1));
+            int turnId = turnCounter.getAndIncrement();
+            String activeBlockId = (String) clientSession.getAttributes().getOrDefault("activeBlockId", "");
+            long now = Instant.now().toEpochMilli();
+
+            applicationEventPublisher.publishEvent(new SessionStateSnapshotEvent(
+                clientSession.getId(),
+                new TranscriptTurn(turnId, "user", userTranscript, now, activeBlockId)
+            ));
         }
     }
 
     /**
      * SUB-HELPER: AI TRANSCRIPTION
      */
-    private void extractAiTranscript(WebSocketSession activeClient, JsonNode serverContent) throws IOException {
+    private void extractAiTranscript(WebSocketSession clientSession, WebSocketSession activeClient, JsonNode serverContent) throws IOException {
         if (serverContent.has("outputTranscription")) {
             String aiTranscript = serverContent.path("outputTranscription").path("text").asText();
             log.info("[AI Speaker Transcribed Text]: {}", aiTranscript);
@@ -247,6 +324,18 @@ public class GeminiLiveVoiceAdapter implements IAiVoiceAdapter {
                 "type", "TRANSCRIPT_AI",
                 "text", aiTranscript
             ))));
+
+            // Publish async turn snapshot to SessionStateAgent
+            AtomicInteger turnCounter = (AtomicInteger) clientSession.getAttributes()
+                    .computeIfAbsent("turnCounter", k -> new AtomicInteger(1));
+            int turnId = turnCounter.getAndIncrement();
+            String activeBlockId = (String) clientSession.getAttributes().getOrDefault("activeBlockId", "");
+            long now = Instant.now().toEpochMilli();
+
+            applicationEventPublisher.publishEvent(new SessionStateSnapshotEvent(
+                clientSession.getId(),
+                new TranscriptTurn(turnId, "model", aiTranscript, now, activeBlockId)
+            ));
         }
     }
 

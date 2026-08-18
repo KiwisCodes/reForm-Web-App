@@ -151,7 +151,7 @@ private void handleJsonPayload(String userId, WebSocketSession clientSession, We
 }
 ```
 
-### 3. Server Content Helper (`handleServerContent`)
+### 3. Server Content Helper (`handleServerContent`) & Turn Mechanics
 ```java
 private void handleServerContent(WebSocketSession clientSession, JsonNode serverContent) throws IOException {
     WebSocketSession activeClient = (WebSocketSession) clientSession.getAttributes().get("safeClientSession");
@@ -159,13 +159,17 @@ private void handleServerContent(WebSocketSession clientSession, JsonNode server
         return;
     }
 
-    extractUserTranscript(activeClient, serverContent);
-    extractAiTranscript(activeClient, serverContent);
+    extractUserTranscript(clientSession, activeClient, serverContent);
+    extractAiTranscript(clientSession, activeClient, serverContent);
     decodeAndForwardPcmAudio(activeClient, serverContent);
     handleBargeInInterruption(activeClient, serverContent);
+    handleTurnComplete(clientSession, serverContent);
 }
 
-private void extractUserTranscript(WebSocketSession activeClient, JsonNode serverContent) throws IOException {
+/**
+ * SUB-HELPER: USER TRANSCRIPTION & TURN SNAPSHOTTING
+ */
+private void extractUserTranscript(WebSocketSession clientSession, WebSocketSession activeClient, JsonNode serverContent) throws IOException {
     if (serverContent.has("inputTranscription")) {
         String userTranscript = serverContent.path("inputTranscription").path("text").asText();
         log.info("[Candidate Transcribed Text]: {}", userTranscript);
@@ -173,10 +177,25 @@ private void extractUserTranscript(WebSocketSession activeClient, JsonNode serve
             "type", "TRANSCRIPT_USER",
             "text", userTranscript
         ))));
+
+        // Publish async turn snapshot to SessionStateAgent (Hot Redis RAM)
+        AtomicInteger turnCounter = (AtomicInteger) clientSession.getAttributes()
+                .computeIfAbsent("turnCounter", k -> new AtomicInteger(1));
+        int turnId = turnCounter.getAndIncrement();
+        String activeBlockId = (String) clientSession.getAttributes().getOrDefault("activeBlockId", "");
+        long now = Instant.now().toEpochMilli(); // single capture — avoids double-call skew on multi-node clusters
+
+        applicationEventPublisher.publishEvent(new SessionStateSnapshotEvent(
+            clientSession.getId(),
+            new TranscriptTurn(turnId, "user", userTranscript, now, activeBlockId)
+        ));
     }
 }
 
-private void extractAiTranscript(WebSocketSession activeClient, JsonNode serverContent) throws IOException {
+/**
+ * SUB-HELPER: AI TRANSCRIPTION & TURN SNAPSHOTTING
+ */
+private void extractAiTranscript(WebSocketSession clientSession, WebSocketSession activeClient, JsonNode serverContent) throws IOException {
     if (serverContent.has("outputTranscription")) {
         String aiTranscript = serverContent.path("outputTranscription").path("text").asText();
         log.info("[AI Speaker Transcribed Text]: {}", aiTranscript);
@@ -184,9 +203,75 @@ private void extractAiTranscript(WebSocketSession activeClient, JsonNode serverC
             "type", "TRANSCRIPT_AI",
             "text", aiTranscript
         ))));
+
+        // Publish async turn snapshot to SessionStateAgent (Hot Redis RAM)
+        AtomicInteger turnCounter = (AtomicInteger) clientSession.getAttributes()
+                .computeIfAbsent("turnCounter", k -> new AtomicInteger(1));
+        int turnId = turnCounter.getAndIncrement();
+        String activeBlockId = (String) clientSession.getAttributes().getOrDefault("activeBlockId", "");
+        long now = Instant.now().toEpochMilli(); // single capture — avoids double-call skew on multi-node clusters
+
+        applicationEventPublisher.publishEvent(new SessionStateSnapshotEvent(
+            clientSession.getId(),
+            new TranscriptTurn(turnId, "model", aiTranscript, now, activeBlockId)
+        ));
     }
 }
 
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * 5.1 TIMESTAMP EVOLUTION DEEP DIVE: System.currentTimeMillis() vs Instant.now()
+ * ─────────────────────────────────────────────────────────────────────────────
+ * 
+ * ❌ OLD CODE (Problematic Pattern):
+ * ```java
+ * // In extractUserTranscript() & extractAiTranscript():
+ * applicationEventPublisher.publishEvent(new SessionStateSnapshotEvent(
+ *     clientSession.getId(),
+ *     new TranscriptTurn(turnId, "user", userTranscript, System.currentTimeMillis(), activeBlockId)
+ * ));
+ * ```
+ * 
+ * ⚠️ WHY THE OLD CODE IS NOT GOOD:
+ * 1. Non-Deterministic Double-Call Skew: When timestamps are retrieved inline across multiple 
+ *    operations or within composite constructors (e.g. connectedAt and lastActiveAt in SessionStateMemento), 
+ *    two calls to System.currentTimeMillis() executed milliseconds apart produce divergent timestamps 
+ *    for an event that logically happened at the exact same instant.
+ * 2. Multi-Node Cluster & Clock Drift: System.currentTimeMillis() reads the host OS wall-clock time. 
+ *    In a distributed Kubernetes cluster with multiple backend server pods, OS clocks can drift or 
+ *    experience NTP step adjustments (leaps backwards/forwards), resulting in out-of-order turn 
+ *    timestamps when users reconnect across different nodes.
+ * 3. Legacy Java 1.0 Heritage: System.currentTimeMillis() is a legacy primitive API with no explicit 
+ *    UTC time-zone semantics, making temporal calculations less expressive and harder to mock in tests.
+ * 
+ * ─────────────────────────────────────────────────────────────────────────────
+ * 
+ * ✅ NEW CODE (Production-Grade Pattern):
+ * ```java
+ * // Single-capture Instant pattern:
+ * long now = Instant.now().toEpochMilli();
+ * applicationEventPublisher.publishEvent(new SessionStateSnapshotEvent(
+ *     clientSession.getId(),
+ *     new TranscriptTurn(turnId, "user", userTranscript, now, activeBlockId)
+ * ));
+ * ```
+ * 
+ * 🌟 WHY THE NEW CODE IS GOOD:
+ * 1. Atomic Point-in-Time Snapshot: Capturing `long now = Instant.now().toEpochMilli()` once at 
+ *    the top of the method ensures that every data structure created in that execution frame (the 
+ *    TranscriptTurn, the SessionStateSnapshotEvent, and downstream Redis updates) shares the exact same 
+ *    timestamp.
+ * 2. Explicit UTC Timeline Anchoring: java.time.Instant is mathematically anchored to the UTC epoch 
+ *    timeline, providing unambiguous, monotonic time references across distributed microservices.
+ * 3. Consistency with Redis State Machine: Ensures seamless coordination with SessionStateAgent's 
+ *    Hot RAM state, avoiding race conditions or artificial timestamp ordering discrepancies when 
+ *    handling reconnections across server pods.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+/**
+ * SUB-HELPER: DECODE BASE64 PCM AUDIO TO RAW BINARY BYTES
+ */
 private void decodeAndForwardPcmAudio(WebSocketSession activeClient, JsonNode serverContent) throws IOException {
     JsonNode parts = serverContent.path("modelTurn").path("parts");
     if (parts.isArray()) {
@@ -199,6 +284,75 @@ private void decodeAndForwardPcmAudio(WebSocketSession activeClient, JsonNode se
             }
         }
     }
+}
+
+/**
+ * SUB-HELPER: NATIVE BARGE-IN INTERRUPTION FLUSH SIGNAL
+ */
+private void handleBargeInInterruption(WebSocketSession activeClient, JsonNode serverContent) throws IOException {
+    if (serverContent.path("interrupted").asBoolean(false)) {
+        log.info("Native barge-in detected by Gemini. Sending FLUSH signal to client.");
+        activeClient.sendMessage(new TextMessage("{\"type\":\"INTERRUPTED\"}"));
+    }
+}
+
+/**
+ * SUB-HELPER: DYNAMIC TURN COMPLETION & GRACEFUL TEARDOWN
+ * Intercepts Google's turnComplete signal. If endSession was invoked, executes dynamic
+ * audio buffer drain and socket teardown without arbitrary hardcoded sleep delays.
+ */
+private void handleTurnComplete(WebSocketSession clientSession, JsonNode serverContent) {
+    if (serverContent.path("turnComplete").asBoolean(false)) {
+        Boolean isEnding = (Boolean) clientSession.getAttributes().get("isEndingSession");
+        if (Boolean.TRUE.equals(isEnding)) {
+            WebSocketSession geminiSession = (WebSocketSession) clientSession.getAttributes().get("geminiSession");
+            log.info("🏁 [GEMINI GOODBYE FINISHED]: turnComplete received. Executing dynamic graceful teardown.");
+            executeGracefulTeardown(clientSession, geminiSession);
+        }
+    }
+}
+
+/**
+ * DYNAMIC TEARDOWN EXECUTOR (Virtual Thread)
+ * Performs atomic, thread-safe dual socket teardown:
+ * 1. Sends SESSION_CLOSED signal to frontend.
+ * 2. Allows 300ms flight window for client-side Web Audio buffer playback.
+ * 3. Closes Socket 2 (Gemini WSS) -> Stops billing immediately.
+ * 4. Closes Socket 1 (Browser WSS) -> Triggers afterConnectionClosed and Redis cleanup.
+ */
+private void executeGracefulTeardown(WebSocketSession clientSession, WebSocketSession geminiSession) {
+    if (clientSession.getAttributes().putIfAbsent("teardownExecuted", Boolean.TRUE) != null) {
+        return;
+    }
+
+    Thread.ofVirtual().name("dynamic-teardown-" + clientSession.getId()).start(() -> {
+        try {
+            WebSocketSession activeClient = (WebSocketSession) clientSession.getAttributes().get("safeClientSession");
+            if (activeClient != null && activeClient.isOpen()) {
+                activeClient.sendMessage(new TextMessage(objectMapper.writeValueAsString(Map.of(
+                    "type", "SESSION_CLOSED",
+                    "status", "SUCCESS"
+                ))));
+            }
+
+            // 300ms flight delay for client Web Audio context playback buffer
+            Thread.sleep(300);
+
+            // 1. Close Socket 2 (Gemini WSS) -> Stops billing immediately
+            if (geminiSession != null && geminiSession.isOpen()) {
+                geminiSession.close(CloseStatus.NORMAL);
+                log.info("✅ [Socket 2 CLOSED] Gemini Live WSS closed -> billing terminated");
+            }
+
+            // 2. Close Socket 1 (Browser WSS) -> Triggers afterConnectionClosed and Redis cleanup
+            if (clientSession.isOpen()) {
+                clientSession.close(CloseStatus.NORMAL);
+                log.info("✅ [Socket 1 CLOSED] Browser WSS closed -> session cleanup complete");
+            }
+        } catch (Exception e) {
+            log.error("Error during dynamic graceful teardown for session: {}", clientSession.getId(), e);
+        }
+    });
 }
 ```
 

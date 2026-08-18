@@ -6,6 +6,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 
 /**
@@ -33,7 +34,7 @@ public class SessionTracker {
         String sessionKey = SESSION_KEY_PREFIX + userId;
         Map<String, Object> payload = Map.of(
                 "sessionId", sessionId,
-                "connectedAt", System.currentTimeMillis(),
+                "connectedAt", Instant.now().toEpochMilli(),
                 "nodeId", nodeId
         );
 

@@ -1,5 +1,8 @@
 package com.reForm.backend.ai.service;
 
+import com.reForm.backend.ai.domain.SessionStateMemento;
+import com.reForm.backend.ai.domain.SessionStateRecoveryResult;
+import com.reForm.backend.ai.domain.TranscriptTurn;
 import com.reForm.backend.ai.port.IAiModelProviderStrategy;
 import com.reForm.backend.ai.strategy.block.BlockExecutionRegistry;
 import com.reForm.backend.ai.strategy.block.IBlockExecutionStrategy;
@@ -71,6 +74,70 @@ public class SessionContextService {
      */
     public Map<String, Object> buildSetupContext(String userId, Role role, String formId, String requestedModelKey) {
         return buildSetupContext(userId, role, formId, requestedModelKey, null);
+    }
+
+    /**
+     * Constructs rehydrated setup context for a RECONNECTED session.
+     * Injects previous dialogue turns, answered fields, and resumption directives.
+     */
+    public Map<String, Object> buildReconnectionSetupContext(SessionStateRecoveryResult recoveryResult) {
+        if (recoveryResult == null || recoveryResult.memento() == null) {
+            log.warn("Recovery result or memento is null. Falling back to default setup context.");
+            return buildSetupContext("unknown", Role.FORM_FILLER, "GEMINI_3_1_LIVE");
+        }
+
+        SessionStateMemento memento = recoveryResult.memento();
+        Role role = memento.role() != null ? Role.valueOf(memento.role()) : Role.FORM_FILLER;
+
+        Map<String, Object> setupMap = buildSetupContext(
+            memento.userId(),
+            role,
+            memento.formId(),
+            memento.modelKey()
+        );
+
+        // Enhance System Instruction with Reconnection Context
+        String nl = System.lineSeparator();
+        StringBuilder recap = new StringBuilder();
+        recap.append(nl).append(nl).append("[SESSION RECONNECTION CONTEXT]").append(nl);
+        recap.append("This is a RESUMED session (Session ID: ").append(memento.sessionId()).append(").").append(nl);
+        recap.append("Completed turns so far: ").append(memento.turnCount()).append(nl);
+
+        if (memento.answers() != null && !memento.answers().isEmpty()) {
+            recap.append("Verified answers collected so far:").append(nl);
+            memento.answers().forEach((field, val) ->
+                recap.append("- Field '").append(field).append("': ").append(val).append(nl)
+            );
+        }
+
+        if (recoveryResult.recentTurns() != null && !recoveryResult.recentTurns().isEmpty()) {
+            recap.append(nl).append("[RECENT DIALOGUE HISTORY]").append(nl);
+            for (TranscriptTurn turn : recoveryResult.recentTurns()) {
+                recap.append(turn.role().equalsIgnoreCase("user") ? "Candidate: " : "AI: ")
+                     .append(turn.text()).append(nl);
+            }
+        }
+
+        recap.append(nl).append("[RESUMPTION INSTRUCTIONS]").append(nl);
+        recap.append("1. Greet the user warmly and briefly acknowledge the reconnection (e.g., 'Welcome back! Let's continue where we left off.').").append(nl);
+        if (memento.activeBlockId() != null && !memento.activeBlockId().isBlank()) {
+            recap.append("2. Resume immediately from block '").append(memento.activeBlockId()).append("'.").append(nl);
+        }
+        recap.append("3. DO NOT repeat or re-ask questions that have already been answered.").append(nl);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> systemInstructionMap = (Map<String, Object>) setupMap.get("systemInstruction");
+        if (systemInstructionMap != null) {
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> parts = (List<Map<String, Object>>) systemInstructionMap.get("parts");
+            if (parts != null && !parts.isEmpty()) {
+                String existingPrompt = (String) parts.get(0).get("text");
+                parts.get(0).put("text", existingPrompt + recap);
+            }
+        }
+
+        log.info("✅ Compiled rehydration setup context for reconnected session: {}", memento.sessionId());
+        return setupMap;
     }
 
     public Map<String, Object> buildSetupContext(String userId, Role role, String formId, String requestedModelKey, AbstractBlock activeBlock) {
@@ -206,10 +273,11 @@ public class SessionContextService {
                        "- `generateContentFromDocument`: When the user uploads a document and wants questions generated from it, call this tool." + nl +
                        "- `requestFileUpload`: If you need a document from the user (job description, syllabus), request an upload." + nl +
                        "- `analyzeUploadedFile`: After a file is uploaded, analyze its contents to discuss or generate questions." + nl +
-                       "- `endSession`: When the user says goodbye or is finished building, call this to gracefully end the session." + nl + nl +
+                       "- `endSession`: When the user indicates they are finished building (implicitly or explicitly), call this to gracefully end the session." + nl + nl +
                        "[VOICE CONVERSATION GUIDELINES]" + nl +
                        "1. Keep spoken responses short, natural, and under 2 sentences." + nl +
-                       "2. Acknowledge user requests immediately and explain what field was added or updated on the canvas.";
+                       "2. Acknowledge user requests immediately and explain what field was added or updated on the canvas." + nl +
+                       "3. Be attentive to implicit closure cues ('That's all for today', 'Looks complete', 'I'm good'). Acknowledge politely and invoke `endSession`.";
             } else {
                 basePrompt = "[ROLE & PERSONA]" + nl +
                        "You are an AI Interviewer conducting an interactive voice interview for candidates." + nl + nl +
@@ -222,12 +290,13 @@ public class SessionContextService {
                        "- `flagForHumanReview`: Flag ambiguous, suspicious, or critical answers for the form owner to review." + nl +
                        "- `requestFileUpload`: If you need a file from the user (photo, document, ID), request an upload." + nl +
                        "- `renderDynamicUI`: For multiple-choice or rating questions, render clickable buttons or stars." + nl +
-                       "- `endSession`: When the user says goodbye or all questions are answered, call this to end the session." + nl + nl +
+                       "- `endSession`: Call this when all interview goals are fulfilled, or when the user signals completion/early exit." + nl + nl +
                        "[CONVERSATIONAL GUIDELINES]" + nl +
                        "1. Speak naturally, politely, and keep responses concise (under 25 words per turn)." + nl +
                        "2. Ask questions step-by-step to evaluate the candidate's background." + nl +
                        "3. If the candidate interrupts, stop speaking immediately and listen to their response." + nl +
-                       "4. After every 5 questions, use `lookupFormProgress` and announce how many questions remain.";
+                       "4. After every 5 questions, use `lookupFormProgress` and announce how many questions remain." + nl +
+                       "5. When all goals in the interview checklist are verified and confirmed, or when the candidate indicates they want to wrap up ('That is all from me', 'We are done'), summarize accomplishments politely and invoke `endSession`.";
             }
         }
 
@@ -273,23 +342,34 @@ public class SessionContextService {
         // SECTION A: UNIVERSAL TOOLS (Available to BOTH Form Builders and Form Fillers)
         // ═══════════════════════════════════════════════════════════════════════════
 
-        // Tool 1: endSession
-        // WHY: The AI currently cannot hang up. When a user says "I'm done" or "goodbye",
-        //      the AI keeps talking. This tool lets the AI gracefully end the session,
-        //      close WebSocket connections, stop billing, and trigger frontend cleanup.
-        // WHEN: User says goodbye, all required fields collected, or session timeout.
+        // Tool 1: endSession (Intelligent Multi-Trigger Semantic Intent)
+        // WHY: The AI currently cannot hang up. This tool lets the AI gracefully end the session,
+        //      close WebSocket connections, stop billing, and trigger frontend cleanup when the session is complete.
+        // WHEN: Triggered on:
+        //       1. Task Complete: All required interview goals or form fields are collected and confirmed.
+        //       2. Implicit or Explicit Wrap-Up: User says "That's all from me", "We're done", "I think that covers it", "Goodbye".
+        //       3. Early Departure: User says "I have to jump to a meeting", "Let's stop here", "Cancel the rest".
         functionDeclarations.add(buildFunctionDeclaration(
             "endSession",
-            "Ends the current voice or text session. Call this when the user says goodbye, " +
-                "indicates they are finished, or when all required form fields have been collected.",
+            "Gracefully terminates the voice or text session. Execute this tool when:\n" +
+                "1. (Task Complete): All required interview goals or form fields have been successfully collected and confirmed with the user.\n" +
+                "2. (Natural Wrap-Up): The user signals completion implicitly or explicitly (e.g., 'That is all from me', 'We are done', 'I think that covers it', 'Goodbye', 'Thanks for your help').\n" +
+                "3. (Early Departure): The user expresses an intent to leave, pause, or cancel the session (e.g., 'I have to run to a meeting', 'Let's stop here', 'I don't have more time').\n" +
+                "DO NOT call this tool if the user is merely answering a question, asking for clarification, or pausing temporarily to think.",
             Map.of(
                 "reason", Map.of(
                     "type", "STRING",
-                    "description", "Why the session is ending: USER_REQUESTED, ALL_FIELDS_COLLECTED, TIMEOUT, ERROR"
+                    "enum", List.of("COMPLETED_GOALS", "USER_WRAP_UP", "USER_ABORT_EARLY", "BUILDER_PUBLISHED_EXIT", "TIMEOUT"),
+                    "description", "The classified semantic reason for session termination: COMPLETED_GOALS, USER_WRAP_UP, USER_ABORT_EARLY, BUILDER_PUBLISHED_EXIT, TIMEOUT"
                 ),
                 "summary", Map.of(
                     "type", "STRING",
-                    "description", "Brief summary of what was accomplished in this session."
+                    "description", "A 1-2 sentence executive summary of what was accomplished during this session."
+                ),
+                "unresolvedItems", Map.of(
+                    "type", "ARRAY",
+                    "items", Map.of("type", "STRING"),
+                    "description", "List of goals or fields left unanswered if the user exited early."
                 )
             ),
             List.of("reason")
