@@ -1,6 +1,5 @@
 package com.reForm.backend.ai.service;
 
-import com.reForm.backend.ai.factory.BlockFactory;
 import com.reForm.backend.ai.port.IAiModelProviderStrategy;
 import com.reForm.backend.ai.strategy.block.BlockExecutionRegistry;
 import com.reForm.backend.form.repository.FormAiAgentProfileRepository;
@@ -9,7 +8,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
 import java.util.Map;
@@ -23,16 +21,12 @@ class SessionContextServiceToolDeclarationTest {
     @BeforeEach
     void setUp() {
         FormAiAgentProfileRepository profileRepository = Mockito.mock(FormAiAgentProfileRepository.class);
-        ObjectMapper objectMapper = new ObjectMapper();
         List<IAiModelProviderStrategy> modelStrategies = List.of();
-        BlockFactory blockFactory = Mockito.mock(BlockFactory.class);
         BlockExecutionRegistry blockExecutionRegistry = new BlockExecutionRegistry(List.of());
 
         sessionContextService = new SessionContextService(
-                profileRepository,
-                objectMapper,
                 modelStrategies,
-                blockFactory,
+                profileRepository,
                 blockExecutionRegistry
         );
     }
